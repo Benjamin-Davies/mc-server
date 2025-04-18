@@ -1,7 +1,7 @@
 use crate::types::StatusResponse;
 
 pub trait Encode {
-    fn encode(&self) -> Vec<u8>;
+    fn encode(&self) -> anyhow::Result<Vec<u8>>;
 }
 
 fn long(buf: &mut Vec<u8>, n: i64) {
@@ -9,7 +9,7 @@ fn long(buf: &mut Vec<u8>, n: i64) {
     buf.extend_from_slice(&bytes);
 }
 
-pub fn varint(buf: &mut Vec<u8>, n: u32) {
+pub(crate) fn varint(buf: &mut Vec<u8>, n: u32) {
     let mut n = n;
     loop {
         let mut byte = (n & 0x7F) as u8;
@@ -24,25 +24,25 @@ pub fn varint(buf: &mut Vec<u8>, n: u32) {
     }
 }
 
-pub fn string(buf: &mut Vec<u8>, s: &str) {
+fn string(buf: &mut Vec<u8>, s: &str) {
     let bytes = s.as_bytes();
     prefixed_byte_array(buf, bytes);
 }
 
-pub fn prefixed_byte_array(buf: &mut Vec<u8>, data: &[u8]) {
+fn prefixed_byte_array(buf: &mut Vec<u8>, data: &[u8]) {
     let len = data.len() as u32;
     varint(buf, len);
     buf.extend_from_slice(data);
 }
 
 impl Encode for StatusResponse<'_> {
-    fn encode(&self) -> Vec<u8> {
+    fn encode(&self) -> anyhow::Result<Vec<u8>> {
         let mut buf = Vec::new();
 
         match self {
-            StatusResponse::Status { json_response } => {
+            StatusResponse::Status { status } => {
                 varint(&mut buf, 0x00);
-                string(&mut buf, json_response);
+                string(&mut buf, &serde_json::to_string(status)?);
             }
             StatusResponse::Pong { timestamp } => {
                 varint(&mut buf, 0x01);
@@ -50,6 +50,6 @@ impl Encode for StatusResponse<'_> {
             }
         }
 
-        buf
+        Ok(buf)
     }
 }

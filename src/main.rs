@@ -1,11 +1,18 @@
 use std::{
     net::{TcpListener, TcpStream},
     thread,
+    time::Duration,
 };
 
-use types::{HandshakeRequestNextState, StatusRequest, StatusResponse};
+use chrono::Datelike;
 
-use crate::{decode::Parse, types::HandshakeRequest};
+use crate::{
+    decode::Parse,
+    types::{
+        HandshakeRequest, HandshakeRequestNextState, Players, Status, StatusRequest,
+        StatusResponse, Text, Version,
+    },
+};
 
 mod connection;
 mod decode;
@@ -32,6 +39,7 @@ fn handle_connection(stream: &mut TcpStream) -> anyhow::Result<()> {
     }
 
     let mut state = State::Handshaking;
+    let mut protocol = 0;
 
     while let Ok(packet) = connection::read_packet(stream) {
         match state {
@@ -43,6 +51,7 @@ fn handle_connection(stream: &mut TcpStream) -> anyhow::Result<()> {
                     next_state,
                 } => {
                     dbg!(protocol_version, server_address, server_port);
+                    protocol = protocol_version;
                     match next_state {
                         HandshakeRequestNextState::Status => state = State::Status,
                         _ => todo!("handshake request next state: {next_state:?}"),
@@ -51,23 +60,27 @@ fn handle_connection(stream: &mut TcpStream) -> anyhow::Result<()> {
             },
             State::Status => match packet.parse()? {
                 StatusRequest::Status => {
-                    let json_response = r#"{
-                        "version": {
-                            "name": "",
-                            "protocol": 769
-                        },
-                        "players": {
-                            "max": 100,
-                            "online": 5
-                        },
-                        "description": {
-                            "text": "Hello, world!"
-                        }
-                    }"#;
+                    let dt = chrono::Local::now();
+                    let time_str = dt.format("%H:%M:%S").to_string();
 
-                    connection::write_packet(stream, StatusResponse::Status { json_response })?;
+                    let status = Status {
+                        version: Version {
+                            name: "Clock Server",
+                            protocol,
+                        },
+                        players: Players {
+                            max: dt.month(),
+                            online: dt.day(),
+                        },
+                        description: Text { text: &time_str },
+                    };
+
+                    connection::write_packet(stream, StatusResponse::Status { status })?;
                 }
                 StatusRequest::Ping { timestamp } => {
+                    let dt = chrono::Local::now();
+                    thread::sleep(Duration::from_millis(dt.timestamp_subsec_millis() as u64));
+
                     connection::write_packet(stream, StatusResponse::Pong { timestamp })?;
                 }
             },

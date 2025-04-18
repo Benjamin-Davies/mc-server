@@ -1,3 +1,5 @@
+use serde::Serialize;
+
 #[derive(Debug)]
 pub enum HandshakeRequest<'a> {
     Handshake {
@@ -23,6 +25,30 @@ pub enum StatusRequest {
 
 #[derive(Debug)]
 pub enum StatusResponse<'a> {
-    Status { json_response: &'a str },
+    Status { status: Status<'a> },
     Pong { timestamp: i64 },
+}
+
+#[derive(Debug, Serialize)]
+pub struct Status<'a> {
+    pub version: Version<'a>,
+    pub players: Players,
+    pub description: Text<'a>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct Version<'a> {
+    pub name: &'a str,
+    pub protocol: u32,
+}
+
+#[derive(Debug, Serialize)]
+pub struct Players {
+    pub max: u32,
+    pub online: u32,
+}
+
+#[derive(Debug, Serialize)]
+pub struct Text<'a> {
+    pub text: &'a str,
 }

@@ -12,7 +12,7 @@ pub fn read_packet(stream: &mut impl Read) -> anyhow::Result<Vec<u8>> {
 }
 
 pub fn write_packet(stream: &mut impl Write, packet: impl Encode) -> anyhow::Result<()> {
-    let bytes = packet.encode();
+    let bytes = packet.encode()?;
 
     let mut buf = Vec::new();
     encode::varint(&mut buf, bytes.len() as u32);
