@@ -5,12 +5,13 @@ use std::{
 };
 
 use chrono::Datelike;
+use types::LoginResponse;
 
 use crate::{
     decode::Parse,
     types::{
         HandshakeRequest, HandshakeRequestNextState, Players, Status, StatusRequest,
-        StatusResponse, Text, Version,
+        StatusResponse, TextComponent, Version,
     },
 };
 
@@ -20,7 +21,7 @@ mod encode;
 mod types;
 
 fn main() -> anyhow::Result<()> {
-    let listener = TcpListener::bind("127.0.0.1:25565")?;
+    let listener = TcpListener::bind("0.0.0.0:25565")?;
     println!("Listening on port 25565");
     loop {
         let (mut stream, src) = listener.accept()?;
@@ -54,6 +55,13 @@ fn handle_connection(stream: &mut TcpStream) -> anyhow::Result<()> {
                     protocol = protocol_version;
                     match next_state {
                         HandshakeRequestNextState::Status => state = State::Status,
+                        HandshakeRequestNextState::Login => {
+                            let reason = TextComponent {
+                                text: "You can't login to a clock, silly!",
+                            };
+                            connection::write_packet(stream, LoginResponse::Disconnect { reason })?;
+                            return Ok(());
+                        }
                         _ => todo!("handshake request next state: {next_state:?}"),
                     }
                 }
@@ -72,7 +80,7 @@ fn handle_connection(stream: &mut TcpStream) -> anyhow::Result<()> {
                             max: dt.month(),
                             online: dt.day(),
                         },
-                        description: Text { text: &time_str },
+                        description: TextComponent { text: &time_str },
                     };
 
                     connection::write_packet(stream, StatusResponse::Status { status })?;

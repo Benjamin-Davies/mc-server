@@ -1,4 +1,4 @@
-use crate::types::StatusResponse;
+use crate::types::{LoginResponse, StatusResponse};
 
 pub trait Encode {
     fn encode(&self) -> anyhow::Result<Vec<u8>>;
@@ -47,6 +47,21 @@ impl Encode for StatusResponse<'_> {
             StatusResponse::Pong { timestamp } => {
                 varint(&mut buf, 0x01);
                 long(&mut buf, *timestamp);
+            }
+        }
+
+        Ok(buf)
+    }
+}
+
+impl Encode for LoginResponse<'_> {
+    fn encode(&self) -> anyhow::Result<Vec<u8>> {
+        let mut buf = Vec::new();
+
+        match self {
+            LoginResponse::Disconnect { reason } => {
+                varint(&mut buf, 0x00);
+                string(&mut buf, &serde_json::to_string(reason)?);
             }
         }
 

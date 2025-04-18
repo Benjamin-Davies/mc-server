@@ -33,7 +33,7 @@ pub enum StatusResponse<'a> {
 pub struct Status<'a> {
     pub version: Version<'a>,
     pub players: Players,
-    pub description: Text<'a>,
+    pub description: TextComponent<'a>,
 }
 
 #[derive(Debug, Serialize)]
@@ -49,6 +49,11 @@ pub struct Players {
 }
 
 #[derive(Debug, Serialize)]
-pub struct Text<'a> {
+pub struct TextComponent<'a> {
     pub text: &'a str,
+}
+
+#[derive(Debug)]
+pub enum LoginResponse<'a> {
+    Disconnect { reason: TextComponent<'a> },
 }
