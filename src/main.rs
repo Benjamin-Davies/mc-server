@@ -5,13 +5,15 @@ use std::{
 };
 
 use chrono::Datelike;
-use types::LoginResponse;
+use types::PlayResponse;
+use uuid::Uuid;
 
 use crate::{
     decode::Parse,
     types::{
-        HandshakeRequest, HandshakeRequestNextState, Players, Status, StatusRequest,
-        StatusResponse, TextComponent, Version,
+        ConfigurationRequest, ConfigurationResponse, HandshakeRequest, HandshakeRequestNextState,
+        LoginRequest, LoginResponse, Players, Status, StatusRequest, StatusResponse, TextComponent,
+        Version,
     },
 };
 
@@ -37,10 +39,16 @@ fn handle_connection(stream: &mut TcpStream) -> anyhow::Result<()> {
     enum State {
         Handshaking,
         Status,
+        Login,
+        Configuration,
+        Play,
     }
 
+    // https://minecraft.wiki/w/Java_Edition_protocol?oldid=2874788
+    const PROTOCOL_VERSION: u32 = 769;
+    const GAME_VERSION: &str = "1.21.4";
+
     let mut state = State::Handshaking;
-    let mut protocol = 0;
 
     while let Ok(packet) = connection::read_packet(stream) {
         match state {
@@ -51,17 +59,11 @@ fn handle_connection(stream: &mut TcpStream) -> anyhow::Result<()> {
                     server_port,
                     next_state,
                 } => {
-                    dbg!(protocol_version, server_address, server_port);
-                    protocol = protocol_version;
+                    anyhow::ensure!(protocol_version == PROTOCOL_VERSION);
+                    dbg!(server_address, server_port);
                     match next_state {
                         HandshakeRequestNextState::Status => state = State::Status,
-                        HandshakeRequestNextState::Login => {
-                            let reason = TextComponent {
-                                text: "You can't login to a clock, silly!",
-                            };
-                            connection::write_packet(stream, LoginResponse::Disconnect { reason })?;
-                            return Ok(());
-                        }
+                        HandshakeRequestNextState::Login => state = State::Login,
                         _ => todo!("handshake request next state: {next_state:?}"),
                     }
                 }
@@ -73,8 +75,8 @@ fn handle_connection(stream: &mut TcpStream) -> anyhow::Result<()> {
 
                     let status = Status {
                         version: Version {
-                            name: "Clock Server",
-                            protocol,
+                            name: GAME_VERSION,
+                            protocol: PROTOCOL_VERSION,
                         },
                         players: Players {
                             max: dt.month(),
@@ -92,6 +94,56 @@ fn handle_connection(stream: &mut TcpStream) -> anyhow::Result<()> {
                     connection::write_packet(stream, StatusResponse::Pong { timestamp })?;
                 }
             },
+            State::Login => match packet.parse()? {
+                LoginRequest::LoginStart { name, player_uuid } => {
+                    dbg!(name, player_uuid);
+                    let uuid = Uuid::new_v4();
+                    let username = name;
+
+                    connection::write_packet(
+                        stream,
+                        LoginResponse::LoginSuccess { uuid, username },
+                    )?;
+                }
+                LoginRequest::LoginAcknowledged => state = State::Configuration,
+            },
+            State::Configuration => match packet.parse()? {
+                ConfigurationRequest::ClientInformation { .. } => {
+                    connection::write_packet(
+                        stream,
+                        ConfigurationResponse::KnownPacks {
+                            known_packs: &[("minecraft", "core", GAME_VERSION)],
+                        },
+                    )?;
+                }
+                ConfigurationRequest::PluginMessage { message } => {
+                    dbg!(message);
+                }
+                ConfigurationRequest::AcknowledgeFinishConfiguration => {
+                    state = State::Play;
+
+                    connection::write_packet(stream, PlayResponse::Login { entity_id: 1 })?;
+                    connection::write_packet(
+                        stream,
+                        PlayResponse::SynchronizePlayerPosition {
+                            teleport_id: 0,
+                            x: 0.0,
+                            y: 0.0,
+                            z: 0.0,
+                            velocity_x: 0.0,
+                            velocity_y: 0.0,
+                            velocity_z: 0.0,
+                            yaw: 0.0,
+                            pitch: 0.0,
+                        },
+                    )?;
+                }
+                ConfigurationRequest::KnownPacks { known_packs } => {
+                    dbg!(known_packs);
+                    connection::write_packet(stream, ConfigurationResponse::FinishConfiguration)?;
+                }
+            },
+            State::Play => todo!(),
         }
     }
 

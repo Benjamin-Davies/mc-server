@@ -15,8 +15,7 @@ pub fn write_packet(stream: &mut impl Write, packet: impl Encode) -> anyhow::Res
     let bytes = packet.encode()?;
 
     let mut buf = Vec::new();
-    encode::varint(&mut buf, bytes.len() as u32);
-    buf.extend_from_slice(&bytes);
+    encode::prefixed_byte_array(&mut buf, &bytes);
 
     stream.write_all(&buf)?;
 
