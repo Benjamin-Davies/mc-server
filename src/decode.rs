@@ -4,7 +4,7 @@ use anyhow::Context;
 use uuid::Uuid;
 
 use crate::types::{
-    ConfigurationRequest, HandshakeRequest, HandshakeRequestNextState, LoginRequest,
+    ConfigurationRequest, HandshakeRequest, HandshakeRequestNextState, LoginRequest, PlayRequest,
     ServerboundPluginMessage, StatusRequest,
 };
 
@@ -46,14 +46,26 @@ fn long(bytes: &[u8]) -> anyhow::Result<(i64, &[u8])> {
     Ok((n, rest))
 }
 
-fn varint(bytes: &[u8]) -> anyhow::Result<(u32, &[u8])> {
+fn float(bytes: &[u8]) -> anyhow::Result<(f32, &[u8])> {
+    let (buf, rest) = exact_byte_array(bytes).context("Invalid float")?;
+    let n = f32::from_be_bytes(buf);
+    Ok((n, rest))
+}
+
+fn double(bytes: &[u8]) -> anyhow::Result<(f64, &[u8])> {
+    let (buf, rest) = exact_byte_array(bytes).context("Invalid double")?;
+    let n = f64::from_be_bytes(buf);
+    Ok((n, rest))
+}
+
+fn varint(bytes: &[u8]) -> anyhow::Result<(i32, &[u8])> {
     let mut n = 0;
     let mut shift = 0;
     let mut i = 0;
 
     while i < 5 {
         let byte = bytes.get(i).context("Invalid varint")?;
-        n |= ((byte & 0x7F) as u32) << shift;
+        n |= ((byte & 0x7F) as i32) << shift;
         shift += 7;
         i += 1;
 
@@ -143,7 +155,7 @@ impl<'a> Decode<'a> for StatusRequest {
 
                 Ok(StatusRequest::Ping { timestamp })
             }
-            _ => anyhow::bail!("Invalid packet ID (status): {packet_id}"),
+            _ => anyhow::bail!("Invalid packet ID (status): 0x{packet_id:02x}"),
         }
     }
 }
@@ -160,7 +172,7 @@ impl<'a> Decode<'a> for LoginRequest<'a> {
                 Ok(LoginRequest::LoginStart { name, player_uuid })
             }
             0x03 => Ok(LoginRequest::LoginAcknowledged),
-            _ => anyhow::bail!("Invalid packet ID (login): {packet_id}"),
+            _ => anyhow::bail!("Invalid packet ID (login): 0x{packet_id:02x}"),
         }
     }
 }
@@ -194,17 +206,7 @@ impl<'a> Decode<'a> for ConfigurationRequest<'a> {
                 })
             }
             0x02 => {
-                let (channel, rest) = string(rest)?;
-                let message = match channel {
-                    "minecraft:brand" => {
-                        let (brand, _rest) = string(rest)?;
-                        ServerboundPluginMessage::Brand { brand }
-                    }
-                    _ => ServerboundPluginMessage::Unknown {
-                        channel,
-                        data: rest,
-                    },
-                };
+                let message = rest.parse()?;
 
                 Ok(ConfigurationRequest::PluginMessage { message })
             }
@@ -220,7 +222,77 @@ impl<'a> Decode<'a> for ConfigurationRequest<'a> {
 
                 Ok(ConfigurationRequest::KnownPacks { known_packs })
             }
-            _ => anyhow::bail!("Invalid packet ID (configuration): {packet_id}"),
+            _ => anyhow::bail!("Invalid packet ID (configuration): 0x{packet_id:02x}"),
+        }
+    }
+}
+
+impl<'a> Decode<'a> for PlayRequest<'a> {
+    fn decode(input: &'a [u8]) -> anyhow::Result<Self> {
+        let (packet_id, rest) = varint(input)?;
+
+        match packet_id {
+            0x00 => {
+                let (teleport_id, _rest) = varint(rest)?;
+
+                Ok(PlayRequest::ConfirmTeleport { teleport_id })
+            }
+            0x0B => Ok(PlayRequest::TickEnd),
+            0x14 => {
+                let message = rest.parse()?;
+
+                Ok(PlayRequest::PluginMessage { message })
+            }
+            0x1C => {
+                let (x, rest) = double(rest)?;
+                let (feet_y, rest) = double(rest)?;
+                let (z, rest) = double(rest)?;
+                let (flags, _rest) = byte(rest)?;
+
+                Ok(PlayRequest::SetPlayerPosition {
+                    x,
+                    feet_y,
+                    z,
+                    flags,
+                })
+            }
+            0x1D => {
+                let (x, rest) = double(rest)?;
+                let (feet_y, rest) = double(rest)?;
+                let (z, rest) = double(rest)?;
+                let (yaw, rest) = float(rest)?;
+                let (pitch, rest) = float(rest)?;
+                let (flags, _rest) = byte(rest)?;
+
+                Ok(PlayRequest::SetPlayerPositionAndRotation {
+                    x,
+                    feet_y,
+                    z,
+                    yaw,
+                    pitch,
+                    flags,
+                })
+            }
+            _ => {
+                eprintln!("Invalid packet ID (play): 0x{packet_id:02x}");
+                Ok(PlayRequest::Unknown)
+            }
+        }
+    }
+}
+
+impl<'a> Decode<'a> for ServerboundPluginMessage<'a> {
+    fn decode(input: &'a [u8]) -> anyhow::Result<Self> {
+        let (channel, rest) = string(input)?;
+        match channel {
+            "minecraft:brand" => {
+                let (brand, _rest) = string(rest)?;
+                Ok(ServerboundPluginMessage::Brand { brand })
+            }
+            _ => Ok(ServerboundPluginMessage::Unknown {
+                channel,
+                data: rest,
+            }),
         }
     }
 }

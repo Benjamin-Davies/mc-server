@@ -1,4 +1,7 @@
-use crate::types::{ConfigurationResponse, LoginResponse, PlayResponse, StatusResponse};
+use crate::{
+    nbt,
+    types::{ConfigurationResponse, LoginResponse, PlayResponse, StatusResponse},
+};
 
 pub trait Encode {
     fn encode(&self) -> anyhow::Result<Vec<u8>>;
@@ -14,6 +17,16 @@ fn byte(buf: &mut Vec<u8>, n: i8) {
 
 fn ubyte(buf: &mut Vec<u8>, n: u8) {
     buf.push(n);
+}
+
+fn short(buf: &mut Vec<u8>, n: i16) {
+    let bytes = n.to_be_bytes();
+    buf.extend_from_slice(&bytes);
+}
+
+fn ushort(buf: &mut Vec<u8>, n: u16) {
+    let bytes = n.to_be_bytes();
+    buf.extend_from_slice(&bytes);
 }
 
 fn int(buf: &mut Vec<u8>, n: i32) {
@@ -60,18 +73,77 @@ fn uuid(buf: &mut Vec<u8>, uuid: uuid::Uuid) {
     buf.extend_from_slice(uuid.as_bytes());
 }
 
-fn prefixed_array<T>(buf: &mut Vec<u8>, data: &[T], mut f: impl FnMut(&mut Vec<u8>, &T)) {
+fn prefixed_optional<T>(
+    buf: &mut Vec<u8>,
+    data: &Option<T>,
+    mut f: impl FnMut(&mut Vec<u8>, &T) -> anyhow::Result<()>,
+) -> anyhow::Result<()> {
+    let present = data.is_some();
+    boolean(buf, present);
+    if let Some(data) = data {
+        f(buf, data)?;
+    }
+    Ok(())
+}
+
+fn prefixed_array<T>(
+    buf: &mut Vec<u8>,
+    data: &[T],
+    mut f: impl FnMut(&mut Vec<u8>, &T) -> anyhow::Result<()>,
+) -> anyhow::Result<()> {
     let len = data.len() as i32;
     varint(buf, len);
     for item in data {
-        f(buf, item);
+        f(buf, item)?;
     }
+    Ok(())
 }
 
 pub(crate) fn prefixed_byte_array(buf: &mut Vec<u8>, data: &[u8]) {
     let len = data.len() as i32;
     varint(buf, len);
     buf.extend_from_slice(data);
+}
+
+fn nbt(buf: &mut Vec<u8>, tag: &nbt::Tag) -> anyhow::Result<()> {
+    ubyte(buf, tag.kind() as u8);
+    nbt_body(buf, tag)?;
+    Ok(())
+}
+
+fn nbt_named(buf: &mut Vec<u8>, name: &str, tag: &nbt::Tag) -> anyhow::Result<()> {
+    ubyte(buf, tag.kind() as u8);
+    ushort(buf, name.len() as u16);
+    buf.extend_from_slice(name.as_bytes());
+    nbt_body(buf, tag)?;
+    Ok(())
+}
+
+fn nbt_body(buf: &mut Vec<u8>, tag: &nbt::Tag) -> anyhow::Result<()> {
+    match tag {
+        nbt::Tag::End => {}
+        nbt::Tag::Byte(n) => byte(buf, *n),
+        nbt::Tag::Short(n) => short(buf, *n),
+        nbt::Tag::Int(n) => int(buf, *n),
+        nbt::Tag::Long(n) => long(buf, *n),
+        nbt::Tag::Float(n) => float(buf, *n),
+        nbt::Tag::Double(n) => double(buf, *n),
+        nbt::Tag::ByteArray(_) => todo!(),
+        nbt::Tag::String(s) => {
+            ushort(buf, s.len() as u16);
+            buf.extend_from_slice(s.as_bytes());
+        }
+        nbt::Tag::List(_) => todo!(),
+        nbt::Tag::Compound(items) => {
+            for (key, value) in items {
+                nbt_named(buf, key, value)?;
+            }
+            nbt(buf, &nbt::Tag::End)?;
+        }
+        nbt::Tag::IntArray(_) => todo!(),
+        nbt::Tag::LongArray(_) => todo!(),
+    }
+    Ok(())
 }
 
 impl Encode for StatusResponse<'_> {
@@ -125,13 +197,26 @@ impl Encode for ConfigurationResponse<'_> {
             ConfigurationResponse::FinishConfiguration => {
                 varint(&mut buf, 0x03);
             }
+            ConfigurationResponse::RegistryData {
+                registry_id,
+                entries,
+            } => {
+                varint(&mut buf, 0x07);
+                string(&mut buf, registry_id);
+                prefixed_array(&mut buf, entries, |buf, (entry_id, entry_data)| {
+                    string(buf, entry_id);
+                    prefixed_optional(buf, entry_data, |buf, data| nbt(buf, data))?;
+                    Ok(())
+                })?;
+            }
             ConfigurationResponse::KnownPacks { known_packs } => {
                 varint(&mut buf, 0x0E);
                 prefixed_array(&mut buf, known_packs, |buf, (namespace, id, version)| {
                     string(buf, namespace);
                     string(buf, id);
                     string(buf, version);
-                });
+                    Ok(())
+                })?;
             }
         }
 
@@ -148,7 +233,10 @@ impl Encode for PlayResponse {
                 varint(&mut buf, 0x2C);
                 int(&mut buf, *entity_id);
                 boolean(&mut buf, false);
-                prefixed_array(&mut buf, &["overworld"], |buf, s| string(buf, s));
+                prefixed_array(&mut buf, &["overworld"], |buf, s| {
+                    string(buf, s);
+                    Ok(())
+                })?;
                 varint(&mut buf, 1);
                 varint(&mut buf, 2);
                 varint(&mut buf, 2);

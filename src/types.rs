@@ -1,10 +1,12 @@
 use serde::Serialize;
 use uuid::Uuid;
 
+use crate::nbt;
+
 #[derive(Debug)]
 pub enum HandshakeRequest<'a> {
     Handshake {
-        protocol_version: u32,
+        protocol_version: i32,
         server_address: &'a str,
         server_port: u16,
         next_state: HandshakeRequestNextState,
@@ -40,7 +42,7 @@ pub struct Status<'a> {
 #[derive(Debug, Serialize)]
 pub struct Version<'a> {
     pub name: &'a str,
-    pub protocol: u32,
+    pub protocol: i32,
 }
 
 #[derive(Debug, Serialize)]
@@ -78,14 +80,15 @@ pub enum ConfigurationRequest<'a> {
     ClientInformation {
         locale: &'a str,
         view_distance: i8,
-        chat_mode: u32,
+        chat_mode: i32,
         chat_colors: bool,
         displayed_skin_parts: u8,
-        main_hand: u32,
+        main_hand: i32,
         enable_text_filtering: bool,
         allow_server_listings: bool,
-        particle_status: u32,
+        particle_status: i32,
     },
+    #[allow(dead_code)]
     PluginMessage {
         message: ServerboundPluginMessage<'a>,
     },
@@ -98,16 +101,40 @@ pub enum ConfigurationRequest<'a> {
 #[derive(Debug)]
 pub enum ConfigurationResponse<'a> {
     FinishConfiguration,
+    RegistryData {
+        registry_id: &'a str,
+        entries: &'a [(&'a str, Option<nbt::Tag>)],
+    },
     KnownPacks {
         known_packs: &'a [(&'a str, &'a str, &'a str)],
     },
 }
 
 #[derive(Debug)]
-#[allow(dead_code)]
-pub enum ServerboundPluginMessage<'a> {
-    Brand { brand: &'a str },
-    Unknown { channel: &'a str, data: &'a [u8] },
+pub enum PlayRequest<'a> {
+    ConfirmTeleport {
+        teleport_id: i32,
+    },
+    TickEnd,
+    #[allow(dead_code)]
+    PluginMessage {
+        message: ServerboundPluginMessage<'a>,
+    },
+    SetPlayerPositionAndRotation {
+        x: f64,
+        feet_y: f64,
+        z: f64,
+        yaw: f32,
+        pitch: f32,
+        flags: i8,
+    },
+    SetPlayerPosition {
+        x: f64,
+        feet_y: f64,
+        z: f64,
+        flags: i8,
+    },
+    Unknown,
 }
 
 #[derive(Debug)]
@@ -126,4 +153,11 @@ pub enum PlayResponse {
         yaw: f32,
         pitch: f32,
     },
+}
+
+#[derive(Debug)]
+#[allow(dead_code)]
+pub enum ServerboundPluginMessage<'a> {
+    Brand { brand: &'a str },
+    Unknown { channel: &'a str, data: &'a [u8] },
 }

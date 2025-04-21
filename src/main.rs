@@ -1,11 +1,10 @@
 use std::{
     net::{TcpListener, TcpStream},
     thread,
-    time::Duration,
 };
 
 use chrono::Datelike;
-use types::PlayResponse;
+use types::{PlayRequest, PlayResponse};
 use uuid::Uuid;
 
 use crate::{
@@ -20,6 +19,8 @@ use crate::{
 mod connection;
 mod decode;
 mod encode;
+#[macro_use]
+mod nbt;
 mod types;
 
 fn main() -> anyhow::Result<()> {
@@ -45,7 +46,7 @@ fn handle_connection(stream: &mut TcpStream) -> anyhow::Result<()> {
     }
 
     // https://minecraft.wiki/w/Java_Edition_protocol?oldid=2874788
-    const PROTOCOL_VERSION: u32 = 769;
+    const PROTOCOL_VERSION: i32 = 769;
     const GAME_VERSION: &str = "1.21.4";
 
     let mut state = State::Handshaking;
@@ -88,9 +89,6 @@ fn handle_connection(stream: &mut TcpStream) -> anyhow::Result<()> {
                     connection::write_packet(stream, StatusResponse::Status { status })?;
                 }
                 StatusRequest::Ping { timestamp } => {
-                    let dt = chrono::Local::now();
-                    thread::sleep(Duration::from_millis(dt.timestamp_subsec_millis() as u64));
-
                     connection::write_packet(stream, StatusResponse::Pong { timestamp })?;
                 }
             },
@@ -116,9 +114,7 @@ fn handle_connection(stream: &mut TcpStream) -> anyhow::Result<()> {
                         },
                     )?;
                 }
-                ConfigurationRequest::PluginMessage { message } => {
-                    dbg!(message);
-                }
+                ConfigurationRequest::PluginMessage { message: _ } => {}
                 ConfigurationRequest::AcknowledgeFinishConfiguration => {
                     state = State::Play;
 
@@ -140,11 +136,224 @@ fn handle_connection(stream: &mut TcpStream) -> anyhow::Result<()> {
                 }
                 ConfigurationRequest::KnownPacks { known_packs } => {
                     dbg!(known_packs);
+
+                    send_registry_data(stream)?;
+
                     connection::write_packet(stream, ConfigurationResponse::FinishConfiguration)?;
                 }
             },
-            State::Play => todo!(),
+            State::Play => match packet.parse()? {
+                PlayRequest::ConfirmTeleport { teleport_id } => {
+                    dbg!(teleport_id);
+                }
+                PlayRequest::SetPlayerPositionAndRotation {
+                    x,
+                    feet_y,
+                    z,
+                    yaw,
+                    pitch,
+                    flags,
+                } => {
+                    dbg!([x, feet_y, z], [yaw, pitch], flags);
+                }
+                PlayRequest::SetPlayerPosition {
+                    x,
+                    feet_y,
+                    z,
+                    flags,
+                } => {
+                    dbg!([x, feet_y, z], flags);
+                }
+                _ => {}
+            },
         }
+    }
+
+    Ok(())
+}
+
+fn send_registry_data(stream: &mut TcpStream) -> anyhow::Result<()> {
+    let damage_types = [
+        "minecraft:arrow",
+        "minecraft:bad_respawn_point",
+        "minecraft:cactus",
+        "minecraft:campfire",
+        "minecraft:cramming",
+        "minecraft:dragon_breath",
+        "minecraft:drown",
+        "minecraft:dry_out",
+        "minecraft:ender_pearl",
+        "minecraft:explosion",
+        "minecraft:fall",
+        "minecraft:falling_anvil",
+        "minecraft:falling_block",
+        "minecraft:falling_stalactite",
+        "minecraft:fireball",
+        "minecraft:fireworks",
+        "minecraft:fly_into_wall",
+        "minecraft:freeze",
+        "minecraft:generic",
+        "minecraft:generic_kill",
+        "minecraft:hot_floor",
+        "minecraft:in_fire",
+        "minecraft:in_wall",
+        "minecraft:indirect_magic",
+        "minecraft:lava",
+        "minecraft:lightning_bolt",
+        "minecraft:magic",
+        "minecraft:mob_attack",
+        "minecraft:mob_attack_no_aggro",
+        "minecraft:mob_projectile",
+        "minecraft:on_fire",
+        "minecraft:out_of_world",
+        "minecraft:outside_border",
+        "minecraft:player_attack",
+        "minecraft:player_explosion",
+        "minecraft:sonic_boom",
+        "minecraft:spit",
+        "minecraft:stalagmite",
+        "minecraft:starve",
+        "minecraft:sting",
+        "minecraft:sweet_berry_bush",
+        "minecraft:thorns",
+        "minecraft:thrown",
+        "minecraft:trident",
+        "minecraft:unattributed_fireball",
+        "minecraft:wind_charge",
+        "minecraft:wither",
+        "minecraft:wither_skull",
+    ]
+    .into_iter()
+    .map(|key| {
+        (
+            key,
+            Some(nbt!(
+                {
+                    exhaustion: 0.0,
+                    message_id: "onFire",
+                    scaling: "when_caused_by_living_non_player"
+                }
+            )),
+        )
+    })
+    .collect::<Vec<_>>();
+
+    let registries = [
+        ConfigurationResponse::RegistryData {
+            registry_id: "damage_type",
+            entries: &damage_types,
+        },
+        ConfigurationResponse::RegistryData {
+            registry_id: "dimension_type",
+            entries: &[(
+                "minecraft:overworld",
+                Some(nbt!(
+                    {
+                        ambient_light: 0.0,
+                        bed_works: 1,
+                        coordinate_scale: 1.0,
+                        effects: "minecraft:overworld",
+                        has_ceiling: 0,
+                        has_raids: 1,
+                        has_skylight: 1,
+                        height: 384,
+                        infiniburn: "#minecraft:infiniburn_overworld",
+                        logical_height: 384,
+                        min_y: (-64),
+                        monster_spawn_block_light_limit: 0,
+                        monster_spawn_light_level: {
+                            max_inclusive: 7,
+                            min_inclusive: 0,
+                            type: "minecraft:uniform"
+                        },
+                        natural: 1,
+                        piglin_safe: 0,
+                        respawn_anchor_works: 0,
+                        ultrawarm: 0,
+                    }
+                )),
+            )],
+        },
+        ConfigurationResponse::RegistryData {
+            registry_id: "painting_variant",
+            entries: &[(
+                "placeholder",
+                Some(nbt!(
+                    {
+                        asset_id: "minecraft:alban",
+                        width: 1,
+                        height: 1,
+                    }
+                )),
+            )],
+        },
+        ConfigurationResponse::RegistryData {
+            registry_id: "wolf_variant",
+            entries: &[(
+                "placeholder",
+                Some(nbt!(
+                    {
+                        angry_texture: "minecraft:entity/wolf/wolf_ashen_angry",
+                        biomes: "minecraft:snowy_taiga",
+                        tame_texture: "minecraft:entity/wolf/wolf_ashen_tame",
+                        wild_texture: "minecraft:entity/wolf/wolf_ashen",
+                    }
+                )),
+            )],
+        },
+        ConfigurationResponse::RegistryData {
+            registry_id: "worldgen/biome",
+            entries: &[
+                (
+                    "minecraft:snowy_taiga",
+                    Some(nbt!(
+                        {
+                            downfall: 0.4000000059604645,
+                            effects: {
+                                fog_color: 12638463,
+                                mood_sound: {
+                                    block_search_extent: 8,
+                                    offset: 2.0,
+                                    sound: "minecraft:ambient.cave",
+                                    tick_delay: 6000
+                                },
+                                sky_color: 8625919,
+                                water_color: 4020182,
+                                water_fog_color: 329011
+                            },
+                            has_precipitation: true,
+                            temperature: (-0.5),
+                        }
+                    )),
+                ),
+                (
+                    "minecraft:plains",
+                    Some(nbt!(
+                        {
+                            downfall: 0.4000000059604645,
+                            effects: {
+                                fog_color: 12638463,
+                                mood_sound: {
+                                    block_search_extent: 8,
+                                    offset: 2.0,
+                                    sound: "minecraft:ambient.cave",
+                                    tick_delay: 6000
+                                },
+                                sky_color: 8625919,
+                                water_color: 4020182,
+                                water_fog_color: 329011
+                            },
+                            has_precipitation: true,
+                            temperature: 0.8,
+                        }
+                    )),
+                ),
+            ],
+        },
+    ];
+
+    for registry in registries {
+        connection::write_packet(stream, registry)?;
     }
 
     Ok(())
