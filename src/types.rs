@@ -136,6 +136,9 @@ pub enum PlayResponse {
         event: GameEvent,
         value: f32,
     },
+    KeepAlive {
+        keep_alive_id: i64,
+    },
     Login {
         entity_id: i32,
         enforces_secure_chat: bool,

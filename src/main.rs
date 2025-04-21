@@ -1,6 +1,7 @@
 use std::{
     net::{TcpListener, TcpStream},
     thread,
+    time::Duration,
 };
 
 use chrono::Datelike;
@@ -159,6 +160,14 @@ fn handle_connection(stream: &mut TcpStream) -> anyhow::Result<()> {
             State::Play => match packet.parse()? {
                 PlayRequest::ConfirmTeleport { teleport_id } => {
                     dbg!(teleport_id);
+
+                    loop {
+                        connection::write_packet(
+                            stream,
+                            PlayResponse::KeepAlive { keep_alive_id: 0 },
+                        )?;
+                        thread::sleep(Duration::from_secs(10));
+                    }
                 }
                 _ => {}
             },

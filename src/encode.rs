@@ -238,7 +238,10 @@ impl Encode for PlayResponse {
                 varint(&mut buf, 0x23);
                 ubyte(&mut buf, *event as u8);
                 float(&mut buf, *value);
-                dbg!(&buf);
+            }
+            PlayResponse::KeepAlive { keep_alive_id } => {
+                varint(&mut buf, 0x27);
+                long(&mut buf, *keep_alive_id);
             }
             PlayResponse::Login {
                 entity_id,
