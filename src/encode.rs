@@ -141,7 +141,12 @@ fn nbt_body(buf: &mut Vec<u8>, tag: &nbt::Tag) -> anyhow::Result<()> {
             nbt(buf, &nbt::Tag::End)?;
         }
         nbt::Tag::IntArray(_) => todo!(),
-        nbt::Tag::LongArray(_) => todo!(),
+        nbt::Tag::LongArray(items) => {
+            int(buf, items.len() as i32);
+            for item in items {
+                long(buf, *item);
+            }
+        }
     }
     Ok(())
 }
@@ -229,7 +234,16 @@ impl Encode for PlayResponse {
         let mut buf = Vec::new();
 
         match self {
-            PlayResponse::Login { entity_id } => {
+            PlayResponse::GameEvent { event, value } => {
+                varint(&mut buf, 0x23);
+                ubyte(&mut buf, *event as u8);
+                float(&mut buf, *value);
+                dbg!(&buf);
+            }
+            PlayResponse::Login {
+                entity_id,
+                enforces_secure_chat,
+            } => {
                 varint(&mut buf, 0x2C);
                 int(&mut buf, *entity_id);
                 boolean(&mut buf, false);
@@ -253,7 +267,7 @@ impl Encode for PlayResponse {
                 boolean(&mut buf, false);
                 varint(&mut buf, 0);
                 varint(&mut buf, 0);
-                boolean(&mut buf, false);
+                boolean(&mut buf, *enforces_secure_chat);
             }
             PlayResponse::SynchronizePlayerPosition {
                 teleport_id,

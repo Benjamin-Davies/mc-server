@@ -114,6 +114,9 @@ macro_rules! nbt {
     ( ( - $value:literal ) ) => {
         $crate::nbt::Tag::from(-$value)
     };
+    ([ 0i64; $size:expr ]) => {
+        $crate::nbt::Tag::LongArray(vec![0; $size])
+    };
     ({ $( $key:ident : $value:tt ),* $( , )? }) => {
         $crate::nbt::Tag::Compound(vec![ $( (stringify!($key).to_owned(), nbt!($value) ) ),* ])
     };

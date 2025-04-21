@@ -4,15 +4,14 @@ use std::{
 };
 
 use chrono::Datelike;
-use types::{PlayRequest, PlayResponse};
 use uuid::Uuid;
 
 use crate::{
     decode::Parse,
     types::{
-        ConfigurationRequest, ConfigurationResponse, HandshakeRequest, HandshakeRequestNextState,
-        LoginRequest, LoginResponse, Players, Status, StatusRequest, StatusResponse, TextComponent,
-        Version,
+        ConfigurationRequest, ConfigurationResponse, GameEvent, HandshakeRequest,
+        HandshakeRequestNextState, LoginRequest, LoginResponse, PlayRequest, PlayResponse, Players,
+        Status, StatusRequest, StatusResponse, TextComponent, Version,
     },
 };
 
@@ -117,14 +116,29 @@ fn handle_connection(stream: &mut TcpStream) -> anyhow::Result<()> {
                 ConfigurationRequest::PluginMessage { message: _ } => {}
                 ConfigurationRequest::AcknowledgeFinishConfiguration => {
                     state = State::Play;
+                    dbg!(&state);
 
-                    connection::write_packet(stream, PlayResponse::Login { entity_id: 1 })?;
+                    // https://minecraft.wiki/w/Java_Edition_protocol/FAQ#%E2%80%A6my_player_isn't_spawning!
+                    connection::write_packet(
+                        stream,
+                        PlayResponse::Login {
+                            entity_id: 1,
+                            enforces_secure_chat: true,
+                        },
+                    )?;
+                    connection::write_packet(
+                        stream,
+                        PlayResponse::GameEvent {
+                            event: GameEvent::StartChunks,
+                            value: 0.0,
+                        },
+                    )?;
                     connection::write_packet(
                         stream,
                         PlayResponse::SynchronizePlayerPosition {
                             teleport_id: 0,
                             x: 0.0,
-                            y: 0.0,
+                            y: -16.0,
                             z: 0.0,
                             velocity_x: 0.0,
                             velocity_y: 0.0,
@@ -145,24 +159,6 @@ fn handle_connection(stream: &mut TcpStream) -> anyhow::Result<()> {
             State::Play => match packet.parse()? {
                 PlayRequest::ConfirmTeleport { teleport_id } => {
                     dbg!(teleport_id);
-                }
-                PlayRequest::SetPlayerPositionAndRotation {
-                    x,
-                    feet_y,
-                    z,
-                    yaw,
-                    pitch,
-                    flags,
-                } => {
-                    dbg!([x, feet_y, z], [yaw, pitch], flags);
-                }
-                PlayRequest::SetPlayerPosition {
-                    x,
-                    feet_y,
-                    z,
-                    flags,
-                } => {
-                    dbg!([x, feet_y, z], flags);
                 }
                 _ => {}
             },
@@ -258,8 +254,8 @@ fn send_registry_data(stream: &mut TcpStream) -> anyhow::Result<()> {
                         has_skylight: 1,
                         height: 384,
                         infiniburn: "#minecraft:infiniburn_overworld",
-                        logical_height: 384,
-                        min_y: (-64),
+                        logical_height: 64,
+                        min_y: 0,
                         monster_spawn_block_light_limit: 0,
                         monster_spawn_light_level: {
                             max_inclusive: 7,

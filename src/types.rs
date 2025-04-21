@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use serde::Serialize;
 use uuid::Uuid;
 
@@ -64,19 +66,12 @@ pub enum LoginRequest<'a> {
 
 #[derive(Debug)]
 pub enum LoginResponse<'a> {
-    #[allow(dead_code)]
-    Disconnect {
-        reason: &'a str,
-    },
-    LoginSuccess {
-        uuid: Uuid,
-        username: &'a str,
-    },
+    Disconnect { reason: &'a str },
+    LoginSuccess { uuid: Uuid, username: &'a str },
 }
 
 #[derive(Debug)]
 pub enum ConfigurationRequest<'a> {
-    #[allow(dead_code)]
     ClientInformation {
         locale: &'a str,
         view_distance: i8,
@@ -88,7 +83,6 @@ pub enum ConfigurationRequest<'a> {
         allow_server_listings: bool,
         particle_status: i32,
     },
-    #[allow(dead_code)]
     PluginMessage {
         message: ServerboundPluginMessage<'a>,
     },
@@ -116,7 +110,6 @@ pub enum PlayRequest<'a> {
         teleport_id: i32,
     },
     TickEnd,
-    #[allow(dead_code)]
     PluginMessage {
         message: ServerboundPluginMessage<'a>,
     },
@@ -139,8 +132,13 @@ pub enum PlayRequest<'a> {
 
 #[derive(Debug)]
 pub enum PlayResponse {
+    GameEvent {
+        event: GameEvent,
+        value: f32,
+    },
     Login {
         entity_id: i32,
+        enforces_secure_chat: bool,
     },
     SynchronizePlayerPosition {
         teleport_id: i32,
@@ -155,8 +153,13 @@ pub enum PlayResponse {
     },
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u8)]
+pub enum GameEvent {
+    StartChunks = 13,
+}
+
 #[derive(Debug)]
-#[allow(dead_code)]
 pub enum ServerboundPluginMessage<'a> {
     Brand { brand: &'a str },
     Unknown { channel: &'a str, data: &'a [u8] },
