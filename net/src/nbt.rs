@@ -1,3 +1,5 @@
+use crate::packets::serialize::{Serialize, Serializer};
+
 /// https://minecraft.wiki/w/NBT_format#Binary_format
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[repr(u8)]
@@ -104,6 +106,7 @@ impl From<&str> for Tag {
     }
 }
 
+#[macro_export]
 macro_rules! nbt {
     ( $( () )? ) => {
         $crate::nbt::Tag::End
@@ -120,4 +123,56 @@ macro_rules! nbt {
     ({ $( $key:ident : $value:tt ),* $( , )? }) => {
         $crate::nbt::Tag::Compound(vec![ $( (stringify!($key).to_owned(), nbt!($value) ) ),* ])
     };
+}
+
+impl Serialize for Tag {
+    fn serialize(&self, s: &mut Serializer) -> anyhow::Result<()> {
+        self.serialize_unnamed(s)
+    }
+}
+
+impl Tag {
+    fn serialize_unnamed(&self, s: &mut Serializer) -> anyhow::Result<()> {
+        s.serialize_ubyte(self.kind() as u8)?;
+        self.serialize_body(s)?;
+        Ok(())
+    }
+
+    fn serialize_named(&self, s: &mut Serializer, name: &str) -> anyhow::Result<()> {
+        s.serialize_ubyte(self.kind() as u8)?;
+        s.serialize_ushort(name.len() as u16)?;
+        s.serialize_byte_array(name.as_bytes())?;
+        self.serialize_body(s)?;
+        Ok(())
+    }
+
+    fn serialize_body(&self, s: &mut Serializer) -> anyhow::Result<()> {
+        match self {
+            Tag::End => Ok(()),
+            Tag::Byte(value) => s.serialize_byte(*value),
+            Tag::Short(value) => s.serialize_short(*value),
+            Tag::Int(value) => s.serialize_int(*value),
+            Tag::Long(value) => s.serialize_long(*value),
+            Tag::Float(value) => s.serialize_float(*value),
+            Tag::Double(value) => s.serialize_double(*value),
+            Tag::ByteArray(_) => todo!(),
+            Tag::String(value) => {
+                s.serialize_ushort(value.len() as u16)?;
+                s.serialize_byte_array(value.as_bytes())?;
+                Ok(())
+            }
+            Tag::List(_) => todo!(),
+            Tag::Compound(value) => {
+                s.serialize_array(value, |s, (name, item)| item.serialize_named(s, name))?;
+                Tag::End.serialize_unnamed(s)?;
+                Ok(())
+            }
+            Tag::IntArray(_) => todo!(),
+            Tag::LongArray(value) => {
+                s.serialize_int(value.len() as i32)?;
+                s.serialize_array(value, |s, item| s.serialize_long(*item))?;
+                Ok(())
+            }
+        }
+    }
 }

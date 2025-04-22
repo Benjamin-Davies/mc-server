@@ -7,6 +7,8 @@ use std::{
 use chrono::Datelike;
 use uuid::Uuid;
 
+use net::nbt;
+
 use crate::{
     decode::Parse,
     types::{
@@ -19,8 +21,6 @@ use crate::{
 mod connection;
 mod decode;
 mod encode;
-#[macro_use]
-mod nbt;
 mod types;
 
 fn main() -> anyhow::Result<()> {
@@ -54,7 +54,7 @@ fn handle_connection(stream: &mut TcpStream) -> anyhow::Result<()> {
     while let Ok(packet) = connection::read_packet(stream) {
         match state {
             State::Handshaking => match packet.parse()? {
-                HandshakeRequest::Handshake {
+                HandshakeRequest::Intention {
                     protocol_version,
                     server_address,
                     server_port,
@@ -70,7 +70,7 @@ fn handle_connection(stream: &mut TcpStream) -> anyhow::Result<()> {
                 }
             },
             State::Status => match packet.parse()? {
-                StatusRequest::Status => {
+                StatusRequest::StatusRequest => {
                     let dt = chrono::Local::now();
                     let time_str = dt.format("%H:%M:%S").to_string();
 
@@ -86,21 +86,21 @@ fn handle_connection(stream: &mut TcpStream) -> anyhow::Result<()> {
                         description: TextComponent { text: &time_str },
                     };
 
-                    connection::write_packet(stream, StatusResponse::Status { status })?;
+                    connection::write_packet(stream, StatusResponse::StatusResponse { status })?;
                 }
-                StatusRequest::Ping { timestamp } => {
-                    connection::write_packet(stream, StatusResponse::Pong { timestamp })?;
+                StatusRequest::PingRequest { timestamp } => {
+                    connection::write_packet(stream, StatusResponse::PongResponse { timestamp })?;
                 }
             },
             State::Login => match packet.parse()? {
-                LoginRequest::LoginStart { name, player_uuid } => {
+                LoginRequest::Hello { name, player_uuid } => {
                     dbg!(name, player_uuid);
                     let uuid = Uuid::new_v4();
                     let username = name;
 
                     connection::write_packet(
                         stream,
-                        LoginResponse::LoginSuccess { uuid, username },
+                        LoginResponse::LoginFinished { uuid, username },
                     )?;
                 }
                 LoginRequest::LoginAcknowledged => state = State::Configuration,
@@ -109,13 +109,13 @@ fn handle_connection(stream: &mut TcpStream) -> anyhow::Result<()> {
                 ConfigurationRequest::ClientInformation { .. } => {
                     connection::write_packet(
                         stream,
-                        ConfigurationResponse::KnownPacks {
+                        ConfigurationResponse::SelectKnownPacks {
                             known_packs: &[("minecraft", "core", GAME_VERSION)],
                         },
                     )?;
                 }
-                ConfigurationRequest::PluginMessage { message: _ } => {}
-                ConfigurationRequest::AcknowledgeFinishConfiguration => {
+                ConfigurationRequest::CustomPayload { .. } => {}
+                ConfigurationRequest::FinishConfiguration => {
                     state = State::Play;
                     dbg!(&state);
 
@@ -136,7 +136,7 @@ fn handle_connection(stream: &mut TcpStream) -> anyhow::Result<()> {
                     )?;
                     connection::write_packet(
                         stream,
-                        PlayResponse::SynchronizePlayerPosition {
+                        PlayResponse::PlayerPosition {
                             teleport_id: 0,
                             x: 0.0,
                             y: -16.0,
@@ -149,7 +149,7 @@ fn handle_connection(stream: &mut TcpStream) -> anyhow::Result<()> {
                         },
                     )?;
                 }
-                ConfigurationRequest::KnownPacks { known_packs } => {
+                ConfigurationRequest::SelectKnownPacks { known_packs } => {
                     dbg!(known_packs);
 
                     send_registry_data(stream)?;
@@ -157,8 +157,8 @@ fn handle_connection(stream: &mut TcpStream) -> anyhow::Result<()> {
                     connection::write_packet(stream, ConfigurationResponse::FinishConfiguration)?;
                 }
             },
-            State::Play => match packet.parse()? {
-                PlayRequest::ConfirmTeleport { teleport_id } => {
+            State::Play => match packet.parse().unwrap_or(PlayRequest::ClientTickEnd) {
+                PlayRequest::AcceptTeleportation { teleport_id } => {
                     dbg!(teleport_id);
 
                     loop {
