@@ -81,6 +81,7 @@ impl<'de> Deserializer<'de> {
         let mut result = 0;
         let mut shift = 0;
         loop {
+            anyhow::ensure!(!self.bytes.is_empty(), "No bytes remaining");
             let byte = self.bytes[0];
             self.bytes = &self.bytes[1..];
             result |= ((byte & 0x7F) as i32) << shift;

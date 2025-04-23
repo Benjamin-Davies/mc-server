@@ -1,13 +1,10 @@
-use std::{
-    net::{TcpListener, TcpStream},
-    thread,
-    time::Duration,
-};
+use std::time::Duration;
 
 use chrono::Datelike;
+use tokio::net::TcpListener;
 use uuid::Uuid;
 
-use net::nbt;
+use net::{connection::Connection, nbt};
 
 use crate::{
     decode::Parse,
@@ -18,24 +15,26 @@ use crate::{
     },
 };
 
-mod connection;
 mod decode;
-mod encode;
 mod types;
 
-fn main() -> anyhow::Result<()> {
-    let listener = TcpListener::bind("0.0.0.0:25565")?;
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    let listener = TcpListener::bind("0.0.0.0:25565").await?;
     println!("Listening on port 25565");
     loop {
-        let (mut stream, src) = listener.accept()?;
+        let (stream, src) = listener.accept().await?;
         dbg!(src);
-        thread::spawn(move || {
-            handle_connection(&mut stream).unwrap();
+        let connection = Connection::new(stream);
+        tokio::spawn(async move {
+            if let Err(err) = handle_connection(connection).await {
+                eprintln!("Error handling connection: {}", err);
+            }
         });
     }
 }
 
-fn handle_connection(stream: &mut TcpStream) -> anyhow::Result<()> {
+async fn handle_connection(mut connection: Connection) -> anyhow::Result<()> {
     #[derive(Debug)]
     enum State {
         Handshaking,
@@ -51,7 +50,7 @@ fn handle_connection(stream: &mut TcpStream) -> anyhow::Result<()> {
 
     let mut state = State::Handshaking;
 
-    while let Ok(packet) = connection::read_packet(stream) {
+    while let Ok(packet) = connection.recv_raw().await {
         match state {
             State::Handshaking => match packet.parse()? {
                 HandshakeRequest::Intention {
@@ -86,10 +85,14 @@ fn handle_connection(stream: &mut TcpStream) -> anyhow::Result<()> {
                         description: TextComponent { text: &time_str },
                     };
 
-                    connection::write_packet(stream, StatusResponse::StatusResponse { status })?;
+                    connection
+                        .send(StatusResponse::StatusResponse { status })
+                        .await?;
                 }
                 StatusRequest::PingRequest { timestamp } => {
-                    connection::write_packet(stream, StatusResponse::PongResponse { timestamp })?;
+                    connection
+                        .send(StatusResponse::PongResponse { timestamp })
+                        .await?;
                 }
             },
             State::Login => match packet.parse()? {
@@ -98,21 +101,19 @@ fn handle_connection(stream: &mut TcpStream) -> anyhow::Result<()> {
                     let uuid = Uuid::new_v4();
                     let username = name;
 
-                    connection::write_packet(
-                        stream,
-                        LoginResponse::LoginFinished { uuid, username },
-                    )?;
+                    connection
+                        .send(LoginResponse::LoginFinished { uuid, username })
+                        .await?;
                 }
                 LoginRequest::LoginAcknowledged => state = State::Configuration,
             },
             State::Configuration => match packet.parse()? {
                 ConfigurationRequest::ClientInformation { .. } => {
-                    connection::write_packet(
-                        stream,
-                        ConfigurationResponse::SelectKnownPacks {
+                    connection
+                        .send(ConfigurationResponse::SelectKnownPacks {
                             known_packs: &[("minecraft", "core", GAME_VERSION)],
-                        },
-                    )?;
+                        })
+                        .await?;
                 }
                 ConfigurationRequest::CustomPayload { .. } => {}
                 ConfigurationRequest::FinishConfiguration => {
@@ -120,23 +121,20 @@ fn handle_connection(stream: &mut TcpStream) -> anyhow::Result<()> {
                     dbg!(&state);
 
                     // https://minecraft.wiki/w/Java_Edition_protocol/FAQ#%E2%80%A6my_player_isn't_spawning!
-                    connection::write_packet(
-                        stream,
-                        PlayResponse::Login {
+                    connection
+                        .send(PlayResponse::Login {
                             entity_id: 1,
                             enforces_secure_chat: true,
-                        },
-                    )?;
-                    connection::write_packet(
-                        stream,
-                        PlayResponse::GameEvent {
+                        })
+                        .await?;
+                    connection
+                        .send(PlayResponse::GameEvent {
                             event: GameEvent::StartChunks,
                             value: 0.0,
-                        },
-                    )?;
-                    connection::write_packet(
-                        stream,
-                        PlayResponse::PlayerPosition {
+                        })
+                        .await?;
+                    connection
+                        .send(PlayResponse::PlayerPosition {
                             teleport_id: 0,
                             x: 0.0,
                             y: -16.0,
@@ -146,15 +144,17 @@ fn handle_connection(stream: &mut TcpStream) -> anyhow::Result<()> {
                             velocity_z: 0.0,
                             yaw: 0.0,
                             pitch: 0.0,
-                        },
-                    )?;
+                        })
+                        .await?;
                 }
                 ConfigurationRequest::SelectKnownPacks { known_packs } => {
                     dbg!(known_packs);
 
-                    send_registry_data(stream)?;
+                    send_registry_data(&mut connection).await?;
 
-                    connection::write_packet(stream, ConfigurationResponse::FinishConfiguration)?;
+                    connection
+                        .send(ConfigurationResponse::FinishConfiguration)
+                        .await?;
                 }
             },
             State::Play => match packet.parse().unwrap_or(PlayRequest::ClientTickEnd) {
@@ -162,11 +162,10 @@ fn handle_connection(stream: &mut TcpStream) -> anyhow::Result<()> {
                     dbg!(teleport_id);
 
                     loop {
-                        connection::write_packet(
-                            stream,
-                            PlayResponse::KeepAlive { keep_alive_id: 0 },
-                        )?;
-                        thread::sleep(Duration::from_secs(10));
+                        connection
+                            .send(PlayResponse::KeepAlive { keep_alive_id: 0 })
+                            .await?;
+                        tokio::time::sleep(Duration::from_secs(10)).await;
                     }
                 }
                 _ => {}
@@ -177,7 +176,7 @@ fn handle_connection(stream: &mut TcpStream) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn send_registry_data(stream: &mut TcpStream) -> anyhow::Result<()> {
+async fn send_registry_data(connection: &mut Connection) -> anyhow::Result<()> {
     let damage_types = [
         "minecraft:arrow",
         "minecraft:bad_respawn_point",
@@ -358,7 +357,7 @@ fn send_registry_data(stream: &mut TcpStream) -> anyhow::Result<()> {
     ];
 
     for registry in registries {
-        connection::write_packet(stream, registry)?;
+        connection.send(registry).await?;
     }
 
     Ok(())
