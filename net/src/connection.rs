@@ -56,7 +56,6 @@ impl Connection {
         let write_buf = s.finish();
 
         self.stream.write_all(&write_buf).await?;
-        self.stream.flush().await?;
 
         Ok(())
     }

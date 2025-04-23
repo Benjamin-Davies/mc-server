@@ -5,6 +5,9 @@ pub enum Packet {
     AcceptTeleportation {
         teleport_id: i32,
     },
+    ChunkBatchReceived {
+        chunks_per_tick: f32,
+    },
     ClientTickEnd,
     CustomPayload {
         channel: String,
@@ -31,6 +34,9 @@ impl<'de> Deserialize<'de> for Packet {
         match d.deserialize_varint()? {
             0x00 => Ok(Packet::AcceptTeleportation {
                 teleport_id: d.deserialize_varint()?,
+            }),
+            0x09 => Ok(Packet::ChunkBatchReceived {
+                chunks_per_tick: d.deserialize_float()?,
             }),
             0x0B => Ok(Packet::ClientTickEnd),
             0x14 => Ok(Packet::CustomPayload {

@@ -9,7 +9,10 @@ use net::{
     nbt,
     packets::{
         configuration, handshake, login,
-        play::{self, clientbound::GameEvent},
+        play::{
+            self,
+            clientbound::{ChunkData, GameEvent, LightData},
+        },
         status::{
             self,
             clientbound::{Players, Status, TextComponent, Version},
@@ -104,6 +107,7 @@ async fn handle_connection(mut connection: Connection) -> anyhow::Result<()> {
                     connection
                         .send(play::clientbound::Packet::Login {
                             entity_id: 1,
+                            game_mode: 1,
                             enforces_secure_chat: true,
                         })
                         .await?;
@@ -116,15 +120,62 @@ async fn handle_connection(mut connection: Connection) -> anyhow::Result<()> {
                     connection
                         .send(play::clientbound::Packet::PlayerPosition {
                             teleport_id: 0,
-                            x: 0.0,
-                            y: -16.0,
-                            z: 0.0,
+                            x: 8.0,
+                            y: 256.0,
+                            z: 8.0,
                             velocity_x: 0.0,
                             velocity_y: 0.0,
                             velocity_z: 0.0,
                             yaw: 0.0,
                             pitch: 0.0,
                         })
+                        .await?;
+                    connection
+                        .send(play::clientbound::Packet::SetChunkCacheCenter {
+                            chunk_x: 0,
+                            chunk_z: 0,
+                        })
+                        .await?;
+                    connection
+                        .send(play::clientbound::Packet::ChunkBatchStart)
+                        .await?;
+                    for chunk_x in -2..2 {
+                        for chunk_z in -2..2 {
+                            connection
+                                .send(play::clientbound::Packet::LevelChunkWithLight {
+                                    chunk_x,
+                                    chunk_z,
+                                    data: ChunkData {
+                                        heightmaps: nbt!({
+                                            WORLD_SURFACE: [-1i64; 37],
+                                            MOTION_BLOCKING: [-1i64; 37],
+                                        }),
+                                        data: vec![
+                                            0x10, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, //
+                                            0x10, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, //
+                                            0x10, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, //
+                                            0x10, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, //
+                                            0x10, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, //
+                                            0x10, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, //
+                                            0x10, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, //
+                                            0x10, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, //
+                                            0x10, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, //
+                                            0x10, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, //
+                                            0x10, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, //
+                                            0x10, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, //
+                                            0x10, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, //
+                                            0x10, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, //
+                                            0x10, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, //
+                                            0x10, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, //
+                                        ],
+                                    },
+                                    light: LightData {},
+                                })
+                                .await?;
+                        }
+                    }
+                    connection
+                        .send(play::clientbound::Packet::ChunkBatchFinished { batch_size: 16 })
                         .await?;
                 }
                 configuration::serverbound::Packet::SelectKnownPacks { known_packs } => {
@@ -239,9 +290,9 @@ async fn send_registry_data(connection: &mut Connection) -> anyhow::Result<()> {
                         has_ceiling: 0,
                         has_raids: 1,
                         has_skylight: 1,
-                        height: 384,
+                        height: 256,
                         infiniburn: "#minecraft:infiniburn_overworld",
-                        logical_height: 64,
+                        logical_height: 256,
                         min_y: 0,
                         monster_spawn_block_light_limit: 0,
                         monster_spawn_light_level: {
