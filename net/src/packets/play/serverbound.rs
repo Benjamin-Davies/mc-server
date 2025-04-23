@@ -1,14 +1,14 @@
 use crate::packets::deserialize::{Deserialize, Deserializer};
 
 #[derive(Debug)]
-pub enum Packet<'a> {
+pub enum Packet {
     AcceptTeleportation {
         teleport_id: i32,
     },
     ClientTickEnd,
     CustomPayload {
-        channel: &'a str,
-        data: &'a [u8],
+        channel: String,
+        data: Vec<u8>,
     },
     MovePlayerPosRot {
         x: f64,
@@ -26,7 +26,7 @@ pub enum Packet<'a> {
     },
 }
 
-impl<'de> Deserialize<'de> for Packet<'de> {
+impl<'de> Deserialize<'de> for Packet {
     fn deserialize(d: &mut Deserializer<'de>) -> anyhow::Result<Self> {
         match d.deserialize_varint()? {
             0x00 => Ok(Packet::AcceptTeleportation {
@@ -34,8 +34,8 @@ impl<'de> Deserialize<'de> for Packet<'de> {
             }),
             0x0B => Ok(Packet::ClientTickEnd),
             0x14 => Ok(Packet::CustomPayload {
-                channel: d.deserialize_string()?,
-                data: d.take_remaining(),
+                channel: d.deserialize_string()?.to_owned(),
+                data: d.take_remaining().to_owned(),
             }),
             0x1C => Ok(Packet::MovePlayerPos {
                 x: d.deserialize_double()?,

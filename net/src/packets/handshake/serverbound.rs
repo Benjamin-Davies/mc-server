@@ -1,10 +1,10 @@
 use crate::packets::deserialize::{Deserialize, Deserializer};
 
 #[derive(Debug)]
-pub enum Packet<'a> {
+pub enum Packet {
     Intention {
         protocol_version: i32,
-        server_address: &'a str,
+        server_address: String,
         server_port: u16,
         next_state: NextState,
     },
@@ -17,12 +17,12 @@ pub enum NextState {
     Transfer,
 }
 
-impl<'de> Deserialize<'de> for Packet<'de> {
+impl<'de> Deserialize<'de> for Packet {
     fn deserialize(d: &mut Deserializer<'de>) -> anyhow::Result<Self> {
         match d.deserialize_varint()? {
             0x00 => Ok(Packet::Intention {
                 protocol_version: d.deserialize_varint()?,
-                server_address: d.deserialize_string()?,
+                server_address: d.deserialize_string()?.to_owned(),
                 server_port: d.deserialize_ushort()?,
                 next_state: match d.deserialize_varint()? {
                     1 => NextState::Status,

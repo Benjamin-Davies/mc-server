@@ -4,19 +4,18 @@ use chrono::Datelike;
 use tokio::net::TcpListener;
 use uuid::Uuid;
 
-use net::{connection::Connection, nbt};
-
-use crate::{
-    decode::Parse,
-    types::{
-        ConfigurationRequest, ConfigurationResponse, GameEvent, HandshakeRequest,
-        HandshakeRequestNextState, LoginRequest, LoginResponse, PlayRequest, PlayResponse, Players,
-        Status, StatusRequest, StatusResponse, TextComponent, Version,
+use net::{
+    connection::{Connection, ServerboundPacket},
+    nbt,
+    packets::{
+        configuration, handshake, login,
+        play::{self, clientbound::GameEvent},
+        status::{
+            self,
+            clientbound::{Players, Status, TextComponent, Version},
+        },
     },
 };
-
-mod decode;
-mod types;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -35,41 +34,26 @@ async fn main() -> anyhow::Result<()> {
 }
 
 async fn handle_connection(mut connection: Connection) -> anyhow::Result<()> {
-    #[derive(Debug)]
-    enum State {
-        Handshaking,
-        Status,
-        Login,
-        Configuration,
-        Play,
-    }
-
     // https://minecraft.wiki/w/Java_Edition_protocol?oldid=2874788
     const PROTOCOL_VERSION: i32 = 769;
     const GAME_VERSION: &str = "1.21.4";
 
-    let mut state = State::Handshaking;
-
-    while let Ok(packet) = connection.recv_raw().await {
-        match state {
-            State::Handshaking => match packet.parse()? {
-                HandshakeRequest::Intention {
+    loop {
+        let packet = connection.recv().await?;
+        match packet {
+            ServerboundPacket::Handshake(packet) => match packet {
+                handshake::serverbound::Packet::Intention {
                     protocol_version,
                     server_address,
                     server_port,
-                    next_state,
+                    ..
                 } => {
                     anyhow::ensure!(protocol_version == PROTOCOL_VERSION);
                     dbg!(server_address, server_port);
-                    match next_state {
-                        HandshakeRequestNextState::Status => state = State::Status,
-                        HandshakeRequestNextState::Login => state = State::Login,
-                        _ => todo!("handshake request next state: {next_state:?}"),
-                    }
                 }
             },
-            State::Status => match packet.parse()? {
-                StatusRequest::StatusRequest => {
+            ServerboundPacket::Status(packet) => match packet {
+                status::serverbound::Packet::StatusRequest => {
                     let dt = chrono::Local::now();
                     let time_str = dt.format("%H:%M:%S").to_string();
 
@@ -86,55 +70,51 @@ async fn handle_connection(mut connection: Connection) -> anyhow::Result<()> {
                     };
 
                     connection
-                        .send(StatusResponse::StatusResponse { status })
+                        .send(status::clientbound::Packet::StatusResponse { status })
                         .await?;
                 }
-                StatusRequest::PingRequest { timestamp } => {
+                status::serverbound::Packet::PingRequest { timestamp } => {
                     connection
-                        .send(StatusResponse::PongResponse { timestamp })
+                        .send(status::clientbound::Packet::PongResponse { timestamp })
                         .await?;
                 }
             },
-            State::Login => match packet.parse()? {
-                LoginRequest::Hello { name, player_uuid } => {
-                    dbg!(name, player_uuid);
+            ServerboundPacket::Login(packet) => match packet {
+                login::serverbound::Packet::Hello { name, player_uuid } => {
+                    dbg!(&name, player_uuid);
                     let uuid = Uuid::new_v4();
-                    let username = name;
+                    let username = &name;
 
                     connection
-                        .send(LoginResponse::LoginFinished { uuid, username })
+                        .send(login::clientbound::Packet::LoginFinished { uuid, username })
                         .await?;
                 }
-                LoginRequest::LoginAcknowledged => state = State::Configuration,
+                _ => {}
             },
-            State::Configuration => match packet.parse()? {
-                ConfigurationRequest::ClientInformation { .. } => {
+            ServerboundPacket::Configuration(packet) => match packet {
+                configuration::serverbound::Packet::ClientInformation { .. } => {
                     connection
-                        .send(ConfigurationResponse::SelectKnownPacks {
+                        .send(configuration::clientbound::Packet::SelectKnownPacks {
                             known_packs: &[("minecraft", "core", GAME_VERSION)],
                         })
                         .await?;
                 }
-                ConfigurationRequest::CustomPayload { .. } => {}
-                ConfigurationRequest::FinishConfiguration => {
-                    state = State::Play;
-                    dbg!(&state);
-
+                configuration::serverbound::Packet::FinishConfiguration => {
                     // https://minecraft.wiki/w/Java_Edition_protocol/FAQ#%E2%80%A6my_player_isn't_spawning!
                     connection
-                        .send(PlayResponse::Login {
+                        .send(play::clientbound::Packet::Login {
                             entity_id: 1,
                             enforces_secure_chat: true,
                         })
                         .await?;
                     connection
-                        .send(PlayResponse::GameEvent {
+                        .send(play::clientbound::Packet::GameEvent {
                             event: GameEvent::StartChunks,
                             value: 0.0,
                         })
                         .await?;
                     connection
-                        .send(PlayResponse::PlayerPosition {
+                        .send(play::clientbound::Packet::PlayerPosition {
                             teleport_id: 0,
                             x: 0.0,
                             y: -16.0,
@@ -147,23 +127,24 @@ async fn handle_connection(mut connection: Connection) -> anyhow::Result<()> {
                         })
                         .await?;
                 }
-                ConfigurationRequest::SelectKnownPacks { known_packs } => {
+                configuration::serverbound::Packet::SelectKnownPacks { known_packs } => {
                     dbg!(known_packs);
 
                     send_registry_data(&mut connection).await?;
 
                     connection
-                        .send(ConfigurationResponse::FinishConfiguration)
+                        .send(configuration::clientbound::Packet::FinishConfiguration)
                         .await?;
                 }
+                _ => {}
             },
-            State::Play => match packet.parse().unwrap_or(PlayRequest::ClientTickEnd) {
-                PlayRequest::AcceptTeleportation { teleport_id } => {
+            ServerboundPacket::Play(packet) => match packet {
+                play::serverbound::Packet::AcceptTeleportation { teleport_id } => {
                     dbg!(teleport_id);
 
                     loop {
                         connection
-                            .send(PlayResponse::KeepAlive { keep_alive_id: 0 })
+                            .send(play::clientbound::Packet::KeepAlive { keep_alive_id: 0 })
                             .await?;
                         tokio::time::sleep(Duration::from_secs(10)).await;
                     }
@@ -172,8 +153,6 @@ async fn handle_connection(mut connection: Connection) -> anyhow::Result<()> {
             },
         }
     }
-
-    Ok(())
 }
 
 async fn send_registry_data(connection: &mut Connection) -> anyhow::Result<()> {
@@ -243,11 +222,11 @@ async fn send_registry_data(connection: &mut Connection) -> anyhow::Result<()> {
     .collect::<Vec<_>>();
 
     let registries = [
-        ConfigurationResponse::RegistryData {
+        configuration::clientbound::Packet::RegistryData {
             registry_id: "damage_type",
             entries: &damage_types,
         },
-        ConfigurationResponse::RegistryData {
+        configuration::clientbound::Packet::RegistryData {
             registry_id: "dimension_type",
             entries: &[(
                 "minecraft:overworld",
@@ -278,7 +257,7 @@ async fn send_registry_data(connection: &mut Connection) -> anyhow::Result<()> {
                 )),
             )],
         },
-        ConfigurationResponse::RegistryData {
+        configuration::clientbound::Packet::RegistryData {
             registry_id: "painting_variant",
             entries: &[(
                 "placeholder",
@@ -291,7 +270,7 @@ async fn send_registry_data(connection: &mut Connection) -> anyhow::Result<()> {
                 )),
             )],
         },
-        ConfigurationResponse::RegistryData {
+        configuration::clientbound::Packet::RegistryData {
             registry_id: "wolf_variant",
             entries: &[(
                 "placeholder",
@@ -305,7 +284,7 @@ async fn send_registry_data(connection: &mut Connection) -> anyhow::Result<()> {
                 )),
             )],
         },
-        ConfigurationResponse::RegistryData {
+        configuration::clientbound::Packet::RegistryData {
             registry_id: "worldgen/biome",
             entries: &[
                 (

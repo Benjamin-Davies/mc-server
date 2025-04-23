@@ -1,9 +1,9 @@
 use crate::packets::deserialize::{Deserialize, Deserializer};
 
 #[derive(Debug)]
-pub enum Packet<'a> {
+pub enum Packet {
     ClientInformation {
-        locale: &'a str,
+        locale: String,
         view_distance: i8,
         chat_mode: i32,
         chat_colors: bool,
@@ -14,20 +14,20 @@ pub enum Packet<'a> {
         particle_status: i32,
     },
     CustomPayload {
-        channel: &'a str,
-        data: &'a [u8],
+        channel: String,
+        data: Vec<u8>,
     },
     FinishConfiguration,
     SelectKnownPacks {
-        known_packs: Vec<(&'a str, &'a str, &'a str)>,
+        known_packs: Vec<(String, String, String)>,
     },
 }
 
-impl<'de> Deserialize<'de> for Packet<'de> {
+impl<'de> Deserialize<'de> for Packet {
     fn deserialize(d: &mut Deserializer<'de>) -> anyhow::Result<Self> {
         match d.deserialize_varint()? {
             0x00 => Ok(Packet::ClientInformation {
-                locale: d.deserialize_string()?,
+                locale: d.deserialize_string()?.to_owned(),
                 view_distance: d.deserialize_byte()?,
                 chat_mode: d.deserialize_varint()?,
                 chat_colors: d.deserialize_boolean()?,
@@ -38,16 +38,16 @@ impl<'de> Deserialize<'de> for Packet<'de> {
                 particle_status: d.deserialize_varint()?,
             }),
             0x02 => Ok(Packet::CustomPayload {
-                channel: d.deserialize_string()?,
-                data: d.take_remaining(),
+                channel: d.deserialize_string()?.to_owned(),
+                data: d.take_remaining().to_owned(),
             }),
             0x03 => Ok(Packet::FinishConfiguration),
             0x07 => Ok(Packet::SelectKnownPacks {
                 known_packs: d.deserialize_prefixed_array(|d| {
                     Ok((
-                        d.deserialize_string()?,
-                        d.deserialize_string()?,
-                        d.deserialize_string()?,
+                        d.deserialize_string()?.to_owned(),
+                        d.deserialize_string()?.to_owned(),
+                        d.deserialize_string()?.to_owned(),
                     ))
                 })?,
             }),
