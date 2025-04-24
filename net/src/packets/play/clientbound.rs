@@ -26,6 +26,7 @@ pub enum Packet {
         entity_id: i32,
         game_mode: u8,
         enforces_secure_chat: bool,
+        is_flat: bool,
     },
     PlayerPosition {
         teleport_id: i32,
@@ -93,6 +94,7 @@ impl Serialize for Packet {
             Self::Login {
                 entity_id,
                 game_mode,
+                is_flat,
                 enforces_secure_chat,
             } => {
                 s.serialize_varint(0x2C)?;
@@ -111,7 +113,7 @@ impl Serialize for Packet {
                 s.serialize_ubyte(*game_mode)?;
                 s.serialize_byte(-1)?;
                 s.serialize_boolean(false)?;
-                s.serialize_boolean(false)?;
+                s.serialize_boolean(*is_flat)?;
                 s.serialize_boolean(false)?;
                 s.serialize_varint(0)?;
                 s.serialize_varint(0)?;
