@@ -1,6 +1,9 @@
-use std::time::{Duration, Instant};
+use std::{
+    f64,
+    time::{Duration, Instant},
+};
 
-use chrono::Datelike;
+use chrono::{Datelike, Timelike};
 use tokio::net::TcpListener;
 use uuid::Uuid;
 
@@ -19,6 +22,7 @@ use net::{
             clientbound::{Players, Status, TextComponent, Version},
         },
     },
+    registries,
 };
 
 #[tokio::main]
@@ -138,17 +142,87 @@ async fn handle_connection(mut connection: Connection) -> anyhow::Result<()> {
                         })
                         .await?;
 
+                    let now = chrono::Local::now().time();
+                    let minute_angle = now.num_seconds_from_midnight() * 256 / 3_600 % 256;
+                    let abs_minute_angle;
+                    let mirror_minute;
+                    if minute_angle < 128 {
+                        abs_minute_angle = minute_angle;
+                        mirror_minute = false;
+                    } else {
+                        abs_minute_angle = 256 - minute_angle;
+                        mirror_minute = true;
+                    }
+                    let hour_angle = now.num_seconds_from_midnight() * 256 / 24 / 3_600 % 256;
+                    let abs_hour_angle;
+                    let mirror_hour;
+                    if hour_angle < 128 {
+                        abs_hour_angle = hour_angle;
+                        mirror_hour = false;
+                    } else {
+                        abs_hour_angle = 256 - hour_angle;
+                        mirror_hour = true;
+                    }
+                    for i in 1..=4 {
+                        connection
+                            .send(play::clientbound::Packet::AddEntity {
+                                entity_id: i + 10,
+                                entity_uuid: Uuid::new_v4(),
+                                entity_type: registries::entity_type("minecraft:phantom")?
+                                    .protocol_id,
+                                x: 8.0
+                                    - f64::sin(f64::consts::PI * minute_angle as f64 / 128.0)
+                                        * i as f64,
+                                y: 8.0
+                                    + f64::cos(f64::consts::PI * minute_angle as f64 / 128.0)
+                                        * i as f64,
+                                z: 15.5,
+                                pitch: ((256 + 64 - abs_minute_angle) % 256) as u8,
+                                yaw: if mirror_minute { 192 } else { 64 },
+                                head_yaw: 0,
+                                data: 0,
+                                velocity_x: 0,
+                                velocity_y: 0,
+                                velocity_z: 0,
+                            })
+                            .await?;
+                    }
+                    for i in 1..=3 {
+                        connection
+                            .send(play::clientbound::Packet::AddEntity {
+                                entity_id: i + 20,
+                                entity_uuid: Uuid::new_v4(),
+                                entity_type: registries::entity_type("minecraft:phantom")?
+                                    .protocol_id,
+                                x: 8.0
+                                    - f64::sin(f64::consts::PI * hour_angle as f64 / 128.0)
+                                        * i as f64,
+                                y: 8.0
+                                    + f64::cos(f64::consts::PI * hour_angle as f64 / 128.0)
+                                        * i as f64,
+                                z: 15.5,
+                                pitch: ((256 + 64 - abs_hour_angle) % 256) as u8,
+                                yaw: if mirror_hour { 192 } else { 64 },
+                                head_yaw: 0,
+                                data: 0,
+                                velocity_x: 0,
+                                velocity_y: 0,
+                                velocity_z: 0,
+                            })
+                            .await?;
+                    }
+
                     connection
                         .send(play::clientbound::Packet::PlayerPosition {
                             teleport_id: 0,
                             x: 8.0,
                             y: 1.0,
-                            z: 8.0,
+                            z: 2.0,
                             velocity_x: 0.0,
                             velocity_y: 0.0,
                             velocity_z: 0.0,
                             yaw: 0.0,
-                            pitch: 0.0,
+                            pitch: -23.0,
                         })
                         .await?;
                 }

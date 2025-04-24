@@ -1,3 +1,5 @@
+use uuid::Uuid;
+
 use crate::{
     nbt,
     packets::serialize::{Serialize, Serializer},
@@ -5,6 +7,21 @@ use crate::{
 
 #[derive(Debug)]
 pub enum Packet {
+    AddEntity {
+        entity_id: i32,
+        entity_uuid: Uuid,
+        entity_type: i32,
+        x: f64,
+        y: f64,
+        z: f64,
+        pitch: u8,
+        yaw: u8,
+        head_yaw: u8,
+        data: i32,
+        velocity_x: i16,
+        velocity_y: i16,
+        velocity_z: i16,
+    },
     ChunkBatchFinished {
         batch_size: i32,
     },
@@ -63,6 +80,36 @@ pub enum GameEvent {
 impl Serialize for Packet {
     fn serialize(&self, s: &mut Serializer) -> anyhow::Result<()> {
         match self {
+            Self::AddEntity {
+                entity_id,
+                entity_uuid,
+                entity_type,
+                x,
+                y,
+                z,
+                pitch,
+                yaw,
+                head_yaw,
+                data,
+                velocity_x,
+                velocity_y,
+                velocity_z,
+            } => {
+                s.serialize_varint(0x01)?;
+                s.serialize_varint(*entity_id)?;
+                s.serialize_uuid(*entity_uuid)?;
+                s.serialize_varint(*entity_type)?;
+                s.serialize_double(*x)?;
+                s.serialize_double(*y)?;
+                s.serialize_double(*z)?;
+                s.serialize_ubyte(*pitch)?;
+                s.serialize_ubyte(*yaw)?;
+                s.serialize_ubyte(*head_yaw)?;
+                s.serialize_varint(*data)?;
+                s.serialize_short(*velocity_x)?;
+                s.serialize_short(*velocity_y)?;
+                s.serialize_short(*velocity_z)?;
+            }
             Self::ChunkBatchFinished { batch_size } => {
                 s.serialize_varint(0x0C)?;
                 s.serialize_varint(*batch_size)?;

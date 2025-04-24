@@ -8,10 +8,11 @@ pub struct Subchunk {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Block {
     Air,
-    Stone,
-    OakStairs,
-    PistonHeadUp,
-    PistonHeadDown,
+    GrayConcrete,
+    StairsWestTop,
+    StairsWestBottom,
+    StairsEastTop,
+    StairsEastBottom,
 }
 
 impl Subchunk {
@@ -24,23 +25,14 @@ impl Subchunk {
     pub fn demo() -> Self {
         let mut subchunk = Self::empty();
         for x in 0..16 {
-            for y in 0..16 {
-                for z in 0..16 {
-                    if (x as f32 - 7.5).powi(2)
-                        + (y as f32 - 7.5).powi(2)
-                        + (z as f32 - 7.5).powi(2)
-                        > 7f32.powi(2)
-                    {
-                        let block = if y % 2 == 0 {
-                            Block::PistonHeadDown
-                        } else {
-                            Block::PistonHeadUp
-                        };
-                        subchunk.set_block(x, y, z, block);
-                    }
-                }
+            for z in 0..16 {
+                subchunk.set_block(x, 0, z, Block::GrayConcrete);
             }
         }
+        subchunk.set_block(7, 7, 15, Block::StairsWestTop);
+        subchunk.set_block(7, 8, 15, Block::StairsWestBottom);
+        subchunk.set_block(8, 7, 15, Block::StairsEastTop);
+        subchunk.set_block(8, 8, 15, Block::StairsEastBottom);
         subchunk
     }
 
@@ -70,13 +62,33 @@ impl Subchunk {
 
         // Block states
         // https://minecraft.wiki/w/Minecraft_Wiki:Projects/wiki.vg_merge/Chunk_Format?oldid=2845070#Paletted_Container_structure
-        s.serialize_ubyte(4)?; // Bytes per entry
+        s.serialize_ubyte(4)?; // Bits per entry
         s.serialize_prefixed_array(
             &[
                 0,
-                1,
+                registries::block_state("minecraft:gray_concrete", &[])?.id,
                 registries::block_state(
-                    "minecraft:oak_stairs",
+                    "minecraft:deepslate_tile_stairs",
+                    &[
+                        ("facing", "west"),
+                        ("half", "top"),
+                        ("shape", "straight"),
+                        ("waterlogged", "false"),
+                    ],
+                )?
+                .id,
+                registries::block_state(
+                    "minecraft:deepslate_tile_stairs",
+                    &[
+                        ("facing", "west"),
+                        ("half", "bottom"),
+                        ("shape", "straight"),
+                        ("waterlogged", "false"),
+                    ],
+                )?
+                .id,
+                registries::block_state(
+                    "minecraft:deepslate_tile_stairs",
                     &[
                         ("facing", "east"),
                         ("half", "top"),
@@ -86,13 +98,13 @@ impl Subchunk {
                 )?
                 .id,
                 registries::block_state(
-                    "minecraft:piston_head",
-                    &[("facing", "up"), ("short", "true"), ("type", "normal")],
-                )?
-                .id,
-                registries::block_state(
-                    "minecraft:piston_head",
-                    &[("facing", "down"), ("short", "true"), ("type", "normal")],
+                    "minecraft:deepslate_tile_stairs",
+                    &[
+                        ("facing", "east"),
+                        ("half", "bottom"),
+                        ("shape", "straight"),
+                        ("waterlogged", "false"),
+                    ],
                 )?
                 .id,
             ],
