@@ -1,10 +1,11 @@
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use chrono::Datelike;
 use tokio::net::TcpListener;
 use uuid::Uuid;
 
 use net::{
+    chunk::Subchunk,
     connection::{Connection, ServerboundPacket},
     nbt,
     packets::{
@@ -40,6 +41,8 @@ async fn handle_connection(mut connection: Connection) -> anyhow::Result<()> {
     // https://minecraft.wiki/w/Java_Edition_protocol?oldid=2874788
     const PROTOCOL_VERSION: i32 = 769;
     const GAME_VERSION: &str = "1.21.4";
+
+    let mut last_keepalive = Instant::now();
 
     loop {
         let packet = connection.recv().await?;
@@ -118,6 +121,23 @@ async fn handle_connection(mut connection: Connection) -> anyhow::Result<()> {
                             value: 0.0,
                         })
                         .await?;
+
+                    let chunk = Subchunk::demo();
+                    connection
+                        .send(play::clientbound::Packet::LevelChunkWithLight {
+                            chunk_x: 0,
+                            chunk_z: 0,
+                            data: ChunkData {
+                                heightmaps: nbt!({
+                                    WORLD_SURFACE: [-1i64; 22],
+                                    MOTION_BLOCKING: [-1i64; 22],
+                                }),
+                                data: chunk.chunk_data()?,
+                            },
+                            light: LightData {},
+                        })
+                        .await?;
+
                     connection
                         .send(play::clientbound::Packet::PlayerPosition {
                             teleport_id: 0,
@@ -129,20 +149,6 @@ async fn handle_connection(mut connection: Connection) -> anyhow::Result<()> {
                             velocity_z: 0.0,
                             yaw: 0.0,
                             pitch: 0.0,
-                        })
-                        .await?;
-                    connection
-                        .send(play::clientbound::Packet::LevelChunkWithLight {
-                            chunk_x: 0,
-                            chunk_z: 0,
-                            data: ChunkData {
-                                heightmaps: nbt!({
-                                    WORLD_SURFACE: [-1i64; 37],
-                                    MOTION_BLOCKING: [-1i64; 37],
-                                }),
-                                data: chunk_data(),
-                            },
-                            light: LightData {},
                         })
                         .await?;
                 }
@@ -158,35 +164,18 @@ async fn handle_connection(mut connection: Connection) -> anyhow::Result<()> {
                 _ => {}
             },
             ServerboundPacket::Play(packet) => match packet {
-                play::serverbound::Packet::AcceptTeleportation { teleport_id } => {
-                    dbg!(teleport_id);
-
-                    loop {
+                play::serverbound::Packet::ClientTickEnd => {
+                    if Instant::now() - last_keepalive >= Duration::from_secs(10) {
                         connection
                             .send(play::clientbound::Packet::KeepAlive { keep_alive_id: 0 })
                             .await?;
-                        tokio::time::sleep(Duration::from_secs(10)).await;
+                        last_keepalive = Instant::now();
                     }
                 }
                 _ => {}
             },
         }
     }
-}
-
-fn chunk_data() -> Vec<u8> {
-    let mut data = Vec::new();
-
-    // Block count
-    data.extend_from_slice(&[0x01, 0x00]);
-    // Block states
-    data.extend_from_slice(&[0x04, 0x02, 0x00, 0x01, 0x80, 0x02]);
-    data.extend_from_slice(&[0x11; 16 * 16 * 1 / 2]);
-    data.extend_from_slice(&[0x00; 16 * 16 * 15 / 2]);
-    // Biomes
-    data.extend_from_slice(&[0x00, 0x00, 0x00]);
-
-    data
 }
 
 async fn send_registry_data(connection: &mut Connection) -> anyhow::Result<()> {

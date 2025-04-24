@@ -32,6 +32,7 @@ impl<'de> Deserializer<'de> {
         Ok(())
     }
 
+    #[must_use]
     pub fn take_remaining(&mut self) -> &'de [u8] {
         let bytes = self.bytes;
         self.bytes = &[];

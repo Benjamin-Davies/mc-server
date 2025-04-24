@@ -27,6 +27,7 @@ pub enum Packet {
         z: f64,
         flags: i8,
     },
+    Unknown,
 }
 
 impl<'de> Deserialize<'de> for Packet {
@@ -57,7 +58,11 @@ impl<'de> Deserialize<'de> for Packet {
                 pitch: d.deserialize_float()?,
                 flags: d.deserialize_byte()?,
             }),
-            packet_id => anyhow::bail!("Invalid packet ID (play): 0x{packet_id:02x}"),
+            packet_id => {
+                eprintln!("Invalid packet ID (play): 0x{packet_id:02x}");
+                let _ = d.take_remaining();
+                Ok(Packet::Unknown)
+            }
         }
     }
 }
