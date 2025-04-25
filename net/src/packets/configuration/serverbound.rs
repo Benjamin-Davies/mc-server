@@ -1,4 +1,7 @@
-use crate::packets::deserialize::{Deserialize, Deserializer};
+use crate::{
+    connection::State,
+    packets::deserialize::{Deserialize, Deserializer, Error, InvalidPacketIdSnafu},
+};
 
 #[derive(Debug)]
 pub enum Packet {
@@ -24,7 +27,7 @@ pub enum Packet {
 }
 
 impl<'de> Deserialize<'de> for Packet {
-    fn deserialize(d: &mut Deserializer<'de>) -> anyhow::Result<Self> {
+    fn deserialize(d: &mut Deserializer<'de>) -> Result<Self, Error> {
         match d.deserialize_varint()? {
             0x00 => Ok(Packet::ClientInformation {
                 locale: d.deserialize_string()?.to_owned(),
@@ -51,7 +54,12 @@ impl<'de> Deserialize<'de> for Packet {
                     ))
                 })?,
             }),
-            packet_id => anyhow::bail!("Invalid packet ID (configuration): 0x{packet_id:02x}"),
+            // packet_id => anyhow::bail!("Invalid packet ID (configuration): 0x{packet_id:02x}"),
+            packet_id => InvalidPacketIdSnafu {
+                state: State::Configuration,
+                packet_id,
+            }
+            .fail(),
         }
     }
 }

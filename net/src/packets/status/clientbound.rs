@@ -31,17 +31,16 @@ pub struct TextComponent<'a> {
 }
 
 impl Serialize for Packet<'_> {
-    fn serialize(&self, s: &mut Serializer) -> anyhow::Result<()> {
+    fn serialize(&self, s: &mut Serializer) {
         match self {
             Packet::StatusResponse { status } => {
-                s.serialize_varint(0x00)?;
-                s.serialize_string(&serde_json::to_string(status)?)?;
+                s.serialize_varint(0x00);
+                s.serialize_string(&serde_json::to_string(status).unwrap());
             }
             Packet::PongResponse { timestamp } => {
-                s.serialize_varint(0x01)?;
-                s.serialize_long(*timestamp)?;
+                s.serialize_varint(0x01);
+                s.serialize_long(*timestamp);
             }
         }
-        Ok(())
     }
 }

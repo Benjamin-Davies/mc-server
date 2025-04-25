@@ -126,29 +126,27 @@ macro_rules! nbt {
 }
 
 impl Serialize for Tag {
-    fn serialize(&self, s: &mut Serializer) -> anyhow::Result<()> {
-        self.serialize_unnamed(s)
+    fn serialize(&self, s: &mut Serializer) {
+        self.serialize_unnamed(s);
     }
 }
 
 impl Tag {
-    fn serialize_unnamed(&self, s: &mut Serializer) -> anyhow::Result<()> {
-        s.serialize_ubyte(self.kind() as u8)?;
-        self.serialize_body(s)?;
-        Ok(())
+    fn serialize_unnamed(&self, s: &mut Serializer) {
+        s.serialize_ubyte(self.kind() as u8);
+        self.serialize_body(s);
     }
 
-    fn serialize_named(&self, s: &mut Serializer, name: &str) -> anyhow::Result<()> {
-        s.serialize_ubyte(self.kind() as u8)?;
-        s.serialize_ushort(name.len() as u16)?;
-        s.serialize_byte_array(name.as_bytes())?;
-        self.serialize_body(s)?;
-        Ok(())
+    fn serialize_named(&self, s: &mut Serializer, name: &str) {
+        s.serialize_ubyte(self.kind() as u8);
+        s.serialize_ushort(name.len() as u16);
+        s.serialize_byte_array(name.as_bytes());
+        self.serialize_body(s);
     }
 
-    fn serialize_body(&self, s: &mut Serializer) -> anyhow::Result<()> {
+    fn serialize_body(&self, s: &mut Serializer) {
         match self {
-            Tag::End => Ok(()),
+            Tag::End => {}
             Tag::Byte(value) => s.serialize_byte(*value),
             Tag::Short(value) => s.serialize_short(*value),
             Tag::Int(value) => s.serialize_int(*value),
@@ -157,21 +155,18 @@ impl Tag {
             Tag::Double(value) => s.serialize_double(*value),
             Tag::ByteArray(_) => todo!(),
             Tag::String(value) => {
-                s.serialize_ushort(value.len() as u16)?;
-                s.serialize_byte_array(value.as_bytes())?;
-                Ok(())
+                s.serialize_ushort(value.len() as u16);
+                s.serialize_byte_array(value.as_bytes());
             }
             Tag::List(_) => todo!(),
             Tag::Compound(value) => {
-                s.serialize_array(value, |s, (name, item)| item.serialize_named(s, name))?;
-                Tag::End.serialize_unnamed(s)?;
-                Ok(())
+                s.serialize_array(value, |s, (name, item)| item.serialize_named(s, name));
+                Tag::End.serialize_unnamed(s);
             }
             Tag::IntArray(_) => todo!(),
             Tag::LongArray(value) => {
-                s.serialize_int(value.len() as i32)?;
-                s.serialize_array(value, |s, item| s.serialize_long(*item))?;
-                Ok(())
+                s.serialize_int(value.len() as i32);
+                s.serialize_array(value, |s, item| s.serialize_long(*item));
             }
         }
     }

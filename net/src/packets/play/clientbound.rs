@@ -6,7 +6,7 @@ use crate::{
 };
 
 #[derive(Debug)]
-pub enum Packet {
+pub enum Packet<'a> {
     AddEntity {
         entity_id: i32,
         entity_uuid: Uuid,
@@ -26,6 +26,9 @@ pub enum Packet {
         batch_size: i32,
     },
     ChunkBatchStart,
+    Disconnect {
+        reason: &'a str,
+    },
     GameEvent {
         event: GameEvent,
         value: f32,
@@ -77,8 +80,8 @@ pub enum GameEvent {
     StartChunks = 13,
 }
 
-impl Serialize for Packet {
-    fn serialize(&self, s: &mut Serializer) -> anyhow::Result<()> {
+impl Serialize for Packet<'_> {
+    fn serialize(&self, s: &mut Serializer) {
         match self {
             Self::AddEntity {
                 entity_id,
@@ -95,36 +98,40 @@ impl Serialize for Packet {
                 velocity_y,
                 velocity_z,
             } => {
-                s.serialize_varint(0x01)?;
-                s.serialize_varint(*entity_id)?;
-                s.serialize_uuid(*entity_uuid)?;
-                s.serialize_varint(*entity_type)?;
-                s.serialize_double(*x)?;
-                s.serialize_double(*y)?;
-                s.serialize_double(*z)?;
-                s.serialize_ubyte(*pitch)?;
-                s.serialize_ubyte(*yaw)?;
-                s.serialize_ubyte(*head_yaw)?;
-                s.serialize_varint(*data)?;
-                s.serialize_short(*velocity_x)?;
-                s.serialize_short(*velocity_y)?;
-                s.serialize_short(*velocity_z)?;
+                s.serialize_varint(0x01);
+                s.serialize_varint(*entity_id);
+                s.serialize_uuid(*entity_uuid);
+                s.serialize_varint(*entity_type);
+                s.serialize_double(*x);
+                s.serialize_double(*y);
+                s.serialize_double(*z);
+                s.serialize_ubyte(*pitch);
+                s.serialize_ubyte(*yaw);
+                s.serialize_ubyte(*head_yaw);
+                s.serialize_varint(*data);
+                s.serialize_short(*velocity_x);
+                s.serialize_short(*velocity_y);
+                s.serialize_short(*velocity_z);
             }
             Self::ChunkBatchFinished { batch_size } => {
-                s.serialize_varint(0x0C)?;
-                s.serialize_varint(*batch_size)?;
+                s.serialize_varint(0x0C);
+                s.serialize_varint(*batch_size);
             }
             Self::ChunkBatchStart => {
-                s.serialize_varint(0x0D)?;
+                s.serialize_varint(0x0D);
+            }
+            Self::Disconnect { reason } => {
+                s.serialize_varint(0x1D);
+                s.serialize_nbt(&nbt::Tag::from(*reason));
             }
             Self::GameEvent { event, value } => {
-                s.serialize_varint(0x23)?;
-                s.serialize_ubyte(*event as u8)?;
-                s.serialize_float(*value)?;
+                s.serialize_varint(0x23);
+                s.serialize_ubyte(*event as u8);
+                s.serialize_float(*value);
             }
             Self::KeepAlive { keep_alive_id } => {
-                s.serialize_varint(0x27)?;
-                s.serialize_long(*keep_alive_id)?;
+                s.serialize_varint(0x27);
+                s.serialize_long(*keep_alive_id);
             }
             Self::LevelChunkWithLight {
                 chunk_x,
@@ -132,11 +139,11 @@ impl Serialize for Packet {
                 data,
                 light,
             } => {
-                s.serialize_varint(0x28)?;
-                s.serialize_int(*chunk_x)?;
-                s.serialize_int(*chunk_z)?;
-                data.serialize(s)?;
-                light.serialize(s)?;
+                s.serialize_varint(0x28);
+                s.serialize_int(*chunk_x);
+                s.serialize_int(*chunk_z);
+                data.serialize(s);
+                light.serialize(s);
             }
             Self::Login {
                 entity_id,
@@ -144,27 +151,27 @@ impl Serialize for Packet {
                 is_flat,
                 enforces_secure_chat,
             } => {
-                s.serialize_varint(0x2C)?;
-                s.serialize_int(*entity_id)?;
-                s.serialize_boolean(false)?;
-                s.serialize_prefixed_array(&["overworld"], |s, item| s.serialize_string(item))?;
-                s.serialize_varint(1)?;
-                s.serialize_varint(8)?;
-                s.serialize_varint(8)?;
-                s.serialize_boolean(false)?;
-                s.serialize_boolean(false)?;
-                s.serialize_boolean(false)?;
-                s.serialize_varint(0)?;
-                s.serialize_string("overworld")?;
-                s.serialize_long(0)?;
-                s.serialize_ubyte(*game_mode)?;
-                s.serialize_byte(-1)?;
-                s.serialize_boolean(false)?;
-                s.serialize_boolean(*is_flat)?;
-                s.serialize_boolean(false)?;
-                s.serialize_varint(0)?;
-                s.serialize_varint(0)?;
-                s.serialize_boolean(*enforces_secure_chat)?;
+                s.serialize_varint(0x2C);
+                s.serialize_int(*entity_id);
+                s.serialize_boolean(false);
+                s.serialize_prefixed_array(&["overworld"], |s, item| s.serialize_string(item));
+                s.serialize_varint(1);
+                s.serialize_varint(8);
+                s.serialize_varint(8);
+                s.serialize_boolean(false);
+                s.serialize_boolean(false);
+                s.serialize_boolean(false);
+                s.serialize_varint(0);
+                s.serialize_string("overworld");
+                s.serialize_long(0);
+                s.serialize_ubyte(*game_mode);
+                s.serialize_byte(-1);
+                s.serialize_boolean(false);
+                s.serialize_boolean(*is_flat);
+                s.serialize_boolean(false);
+                s.serialize_varint(0);
+                s.serialize_varint(0);
+                s.serialize_boolean(*enforces_secure_chat);
             }
             Self::PlayerPosition {
                 teleport_id,
@@ -177,45 +184,42 @@ impl Serialize for Packet {
                 yaw,
                 pitch,
             } => {
-                s.serialize_varint(0x42)?;
-                s.serialize_varint(*teleport_id)?;
-                s.serialize_double(*x)?;
-                s.serialize_double(*y)?;
-                s.serialize_double(*z)?;
-                s.serialize_double(*velocity_x)?;
-                s.serialize_double(*velocity_y)?;
-                s.serialize_double(*velocity_z)?;
-                s.serialize_float(*yaw)?;
-                s.serialize_float(*pitch)?;
-                s.serialize_int(0)?;
+                s.serialize_varint(0x42);
+                s.serialize_varint(*teleport_id);
+                s.serialize_double(*x);
+                s.serialize_double(*y);
+                s.serialize_double(*z);
+                s.serialize_double(*velocity_x);
+                s.serialize_double(*velocity_y);
+                s.serialize_double(*velocity_z);
+                s.serialize_float(*yaw);
+                s.serialize_float(*pitch);
+                s.serialize_int(0);
             }
             Packet::SetChunkCacheCenter { chunk_x, chunk_z } => {
-                s.serialize_varint(0x58)?;
-                s.serialize_varint(*chunk_x)?;
-                s.serialize_varint(*chunk_z)?;
+                s.serialize_varint(0x58);
+                s.serialize_varint(*chunk_x);
+                s.serialize_varint(*chunk_z);
             }
         }
-        Ok(())
     }
 }
 
 impl Serialize for ChunkData {
-    fn serialize(&self, s: &mut Serializer) -> anyhow::Result<()> {
-        s.serialize_nbt(&self.heightmaps)?;
-        s.serialize_prefixed_byte_array(&self.data)?;
-        s.serialize_varint(0)?;
-        Ok(())
+    fn serialize(&self, s: &mut Serializer) {
+        s.serialize_nbt(&self.heightmaps);
+        s.serialize_prefixed_byte_array(&self.data);
+        s.serialize_varint(0);
     }
 }
 
 impl Serialize for LightData {
-    fn serialize(&self, s: &mut Serializer) -> anyhow::Result<()> {
-        s.serialize_prefixed_array(&[0], |s, l| s.serialize_long(*l))?;
-        s.serialize_prefixed_array(&[0], |s, l| s.serialize_long(*l))?;
-        s.serialize_prefixed_array(&[0], |s, l| s.serialize_long(*l))?;
-        s.serialize_prefixed_array(&[0], |s, l| s.serialize_long(*l))?;
-        s.serialize_varint(0)?;
-        s.serialize_varint(0)?;
-        Ok(())
+    fn serialize(&self, s: &mut Serializer) {
+        s.serialize_prefixed_array(&[0], |s, l| s.serialize_long(*l));
+        s.serialize_prefixed_array(&[0], |s, l| s.serialize_long(*l));
+        s.serialize_prefixed_array(&[0], |s, l| s.serialize_long(*l));
+        s.serialize_prefixed_array(&[0], |s, l| s.serialize_long(*l));
+        s.serialize_varint(0);
+        s.serialize_varint(0);
     }
 }

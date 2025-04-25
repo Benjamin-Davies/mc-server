@@ -1,4 +1,9 @@
-use crate::packets::deserialize::{Deserialize, Deserializer};
+use crate::{
+    connection::State,
+    packets::deserialize::{
+        Deserialize, Deserializer, Error, InvalidEnumVariantSnafu, InvalidPacketIdSnafu,
+    },
+};
 
 #[derive(Debug)]
 pub enum Packet {
@@ -18,7 +23,7 @@ pub enum NextState {
 }
 
 impl<'de> Deserialize<'de> for Packet {
-    fn deserialize(d: &mut Deserializer<'de>) -> anyhow::Result<Self> {
+    fn deserialize(d: &mut Deserializer<'de>) -> Result<Self, Error> {
         match d.deserialize_varint()? {
             0x00 => Ok(Packet::Intention {
                 protocol_version: d.deserialize_varint()?,
@@ -28,10 +33,18 @@ impl<'de> Deserialize<'de> for Packet {
                     1 => NextState::Status,
                     2 => NextState::Login,
                     3 => NextState::Transfer,
-                    state => anyhow::bail!("Invalid next state: 0x{state:02x}"),
+                    value => InvalidEnumVariantSnafu {
+                        enum_name: "Next state",
+                        value,
+                    }
+                    .fail()?,
                 },
             }),
-            packet_id => anyhow::bail!("Invalid packet ID (handshake): 0x{packet_id:02x}"),
+            packet_id => InvalidPacketIdSnafu {
+                state: State::Handshake,
+                packet_id,
+            }
+            .fail(),
         }
     }
 }

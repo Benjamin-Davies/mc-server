@@ -1,19 +1,46 @@
 use std::{mem, str};
 
+use snafu::prelude::*;
 use uuid::Uuid;
 
+use crate::connection::State;
+
 pub trait Deserialize<'de>: Sized {
-    fn deserialize(d: &mut Deserializer<'de>) -> anyhow::Result<Self>;
+    fn deserialize(d: &mut Deserializer<'de>) -> Result<Self, Error>;
 }
 
 pub struct Deserializer<'de> {
     bytes: &'de [u8],
 }
 
+#[derive(Debug, Snafu)]
+pub enum Error {
+    #[snafu(display("Unexpected end of packet"))]
+    EndOfPacket,
+    #[snafu(display("Unread bytes remaining"))]
+    BytesRemaining,
+    #[snafu(display("Varint is too long"))]
+    VarintTooLong,
+    #[snafu(display("Varlong is too long"))]
+    VarlongTooLong,
+    #[snafu(
+        visibility(pub),
+        display("Invalid packet id ({state:?}): 0x{packet_id:02X}")
+    )]
+    InvalidPacketId { state: State, packet_id: i32 },
+    #[snafu(
+        visibility(pub),
+        display("Invalid enum variant ({enum_name:?}): {value}")
+    )]
+    InvalidEnumVariant { enum_name: &'static str, value: i32 },
+    #[snafu(transparent)]
+    Utf8Error { source: std::str::Utf8Error },
+}
+
 macro_rules! deserialize_primitive {
     ($name:ident($ty:ty)) => {
-        pub fn $name(&mut self) -> anyhow::Result<$ty> {
-            anyhow::ensure!(self.bytes.len() >= mem::size_of::<$ty>(), "Input too short");
+        pub fn $name(&mut self) -> Result<$ty, Error> {
+            ensure!(self.bytes.len() >= mem::size_of::<$ty>(), EndOfPacketSnafu);
             let value =
                 <$ty>::from_be_bytes(self.bytes[..mem::size_of::<$ty>()].try_into().unwrap());
             self.bytes = &self.bytes[mem::size_of::<$ty>()..];
@@ -27,8 +54,8 @@ impl<'de> Deserializer<'de> {
         Deserializer { bytes }
     }
 
-    pub fn finish(&mut self) -> anyhow::Result<()> {
-        anyhow::ensure!(self.bytes.is_empty(), "Unread bytes remaining");
+    pub fn finish(&mut self) -> Result<(), Error> {
+        ensure!(self.bytes.is_empty(), BytesRemainingSnafu);
         Ok(())
     }
 
@@ -39,16 +66,16 @@ impl<'de> Deserializer<'de> {
         bytes
     }
 
-    pub fn deserialize_boolean(&mut self) -> anyhow::Result<bool> {
+    pub fn deserialize_boolean(&mut self) -> Result<bool, Error> {
         self.deserialize_ubyte().map(|byte| byte != 0)
     }
 
-    pub fn deserialize_byte(&mut self) -> anyhow::Result<i8> {
+    pub fn deserialize_byte(&mut self) -> Result<i8, Error> {
         self.deserialize_ubyte().map(|byte| byte as i8)
     }
 
-    pub fn deserialize_ubyte(&mut self) -> anyhow::Result<u8> {
-        anyhow::ensure!(!self.bytes.is_empty(), "No bytes remaining");
+    pub fn deserialize_ubyte(&mut self) -> Result<u8, Error> {
+        ensure!(!self.bytes.is_empty(), EndOfPacketSnafu);
         let byte = self.bytes[0];
         self.bytes = &self.bytes[1..];
         Ok(byte)
@@ -63,26 +90,23 @@ impl<'de> Deserializer<'de> {
     deserialize_primitive!(deserialize_float(f32));
     deserialize_primitive!(deserialize_double(f64));
 
-    pub fn deserialize_string(&mut self) -> anyhow::Result<&'de str> {
+    pub fn deserialize_string(&mut self) -> Result<&'de str, Error> {
         self.deserialize_prefixed_byte_array()
-            .and_then(|bytes| str::from_utf8(bytes).map_err(anyhow::Error::from))
+            .and_then(|bytes| str::from_utf8(bytes).map_err(Error::from))
     }
 
-    pub fn deserialize_uuid(&mut self) -> anyhow::Result<Uuid> {
-        anyhow::ensure!(
-            self.bytes.len() >= mem::size_of::<Uuid>(),
-            "Input too short"
-        );
+    pub fn deserialize_uuid(&mut self) -> Result<Uuid, Error> {
+        ensure!(self.bytes.len() >= mem::size_of::<Uuid>(), EndOfPacketSnafu);
         let value = Uuid::from_bytes(self.bytes[..mem::size_of::<Uuid>()].try_into().unwrap());
         self.bytes = &self.bytes[mem::size_of::<Uuid>()..];
         Ok(value)
     }
 
-    pub fn deserialize_varint(&mut self) -> anyhow::Result<i32> {
+    pub fn deserialize_varint(&mut self) -> Result<i32, Error> {
         let mut result = 0;
         let mut shift = 0;
         loop {
-            anyhow::ensure!(!self.bytes.is_empty(), "No bytes remaining");
+            ensure!(!self.bytes.is_empty(), EndOfPacketSnafu);
             let byte = self.bytes[0];
             self.bytes = &self.bytes[1..];
             result |= ((byte & 0x7F) as i32) << shift;
@@ -90,11 +114,11 @@ impl<'de> Deserializer<'de> {
                 return Ok(result);
             }
             shift += 7;
-            anyhow::ensure!(shift < 32, "Varint is too long");
+            ensure!(shift < 32, VarintTooLongSnafu);
         }
     }
 
-    pub fn deserialize_varlong(&mut self) -> anyhow::Result<i64> {
+    pub fn deserialize_varlong(&mut self) -> Result<i64, Error> {
         let mut result = 0;
         let mut shift = 0;
         loop {
@@ -105,14 +129,14 @@ impl<'de> Deserializer<'de> {
                 return Ok(result);
             }
             shift += 7;
-            anyhow::ensure!(shift < 64, "Varlong is too long");
+            ensure!(shift < 64, VarlongTooLongSnafu);
         }
     }
 
     pub fn deserialize_prefixed_array<T>(
         &mut self,
-        f: impl Fn(&mut Deserializer<'de>) -> anyhow::Result<T>,
-    ) -> anyhow::Result<Vec<T>> {
+        f: impl Fn(&mut Deserializer<'de>) -> Result<T, Error>,
+    ) -> Result<Vec<T>, Error> {
         let length = self.deserialize_varint()?;
         let mut result = Vec::with_capacity(length as usize);
         for _ in 0..length {
@@ -121,9 +145,9 @@ impl<'de> Deserializer<'de> {
         Ok(result)
     }
 
-    pub fn deserialize_prefixed_byte_array(&mut self) -> anyhow::Result<&'de [u8]> {
+    pub fn deserialize_prefixed_byte_array(&mut self) -> Result<&'de [u8], Error> {
         let length = self.deserialize_varint()?;
-        anyhow::ensure!(self.bytes.len() >= length as usize, "Input to short");
+        ensure!(self.bytes.len() >= length as usize, EndOfPacketSnafu);
         let bytes = &self.bytes[..length as usize];
         self.bytes = &self.bytes[length as usize..];
         Ok(bytes)

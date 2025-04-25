@@ -1,7 +1,7 @@
 use std::{collections::BTreeMap, sync::OnceLock};
 
-use anyhow::Context;
 use serde::Deserialize;
+use snafu::prelude::*;
 
 #[derive(Debug, Deserialize)]
 struct Registries {
@@ -31,6 +31,23 @@ pub struct BlockState {
     pub properties: BTreeMap<String, String>,
 }
 
+#[derive(Debug, Snafu)]
+#[snafu(display("Entity type not found: {id}"))]
+pub struct EntityTypeNotFound {
+    id: String,
+}
+
+#[derive(Debug, Snafu)]
+pub enum BlockStateNotFound {
+    #[snafu(display("Block not found: {id}"))]
+    BlockNotFound { id: String },
+    #[snafu(display("Block state not found: {id} {properties:?}"))]
+    BlockStateNotFound {
+        id: String,
+        properties: Vec<(&'static str, &'static str)>,
+    },
+}
+
 fn registries() -> &'static Registries {
     static CACHE: OnceLock<Registries> = OnceLock::new();
     CACHE.get_or_init(|| {
@@ -51,21 +68,22 @@ fn blocks() -> &'static BTreeMap<String, Block> {
     })
 }
 
-pub fn entity_type(id: &str) -> anyhow::Result<&'static EntityType> {
+pub fn entity_type(id: &str) -> Result<&'static EntityType, EntityTypeNotFound> {
     let registries = registries();
     let entity_type = registries
         .entity_types
         .entries
         .get(id)
-        .with_context(|| format!("No such entity type: {id}"))?;
+        .context(EntityTypeNotFoundSnafu { id })?;
     Ok(entity_type)
 }
 
-pub fn block_state(id: &str, properties: &[(&str, &str)]) -> anyhow::Result<&'static BlockState> {
+pub fn block_state(
+    id: &str,
+    properties: &[(&'static str, &'static str)],
+) -> Result<&'static BlockState, BlockStateNotFound> {
     let blocks = blocks();
-    let block = blocks
-        .get(id)
-        .with_context(|| format!("No such block: {id}"))?;
+    let block = blocks.get(id).context(BlockNotFoundSnafu { id })?;
     let state = block
         .states
         .iter()
@@ -74,6 +92,6 @@ pub fn block_state(id: &str, properties: &[(&str, &str)]) -> anyhow::Result<&'st
                 .iter()
                 .all(|&(k, v)| s.properties.get(k).is_some_and(|x| x == v))
         })
-        .with_context(|| format!("No such block state for block: {id}"))?;
+        .context(BlockStateNotFoundSnafu { id, properties })?;
     Ok(state)
 }

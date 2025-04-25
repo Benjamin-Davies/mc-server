@@ -1,4 +1,7 @@
-use crate::packets::deserialize::{Deserialize, Deserializer};
+use crate::{
+    connection::State,
+    packets::deserialize::{Deserialize, Deserializer, Error, InvalidPacketIdSnafu},
+};
 
 #[derive(Debug)]
 pub enum Packet {
@@ -27,11 +30,10 @@ pub enum Packet {
         z: f64,
         flags: i8,
     },
-    Unknown,
 }
 
 impl<'de> Deserialize<'de> for Packet {
-    fn deserialize(d: &mut Deserializer<'de>) -> anyhow::Result<Self> {
+    fn deserialize(d: &mut Deserializer<'de>) -> Result<Self, Error> {
         match d.deserialize_varint()? {
             0x00 => Ok(Packet::AcceptTeleportation {
                 teleport_id: d.deserialize_varint()?,
@@ -58,11 +60,11 @@ impl<'de> Deserialize<'de> for Packet {
                 pitch: d.deserialize_float()?,
                 flags: d.deserialize_byte()?,
             }),
-            packet_id => {
-                eprintln!("Invalid packet ID (play): 0x{packet_id:02x}");
-                let _ = d.take_remaining();
-                Ok(Packet::Unknown)
+            packet_id => InvalidPacketIdSnafu {
+                state: State::Play,
+                packet_id,
             }
+            .fail(),
         }
     }
 }

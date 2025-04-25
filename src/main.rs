@@ -9,10 +9,10 @@ use uuid::Uuid;
 
 use net::{
     chunk::Subchunk,
-    connection::{Connection, ServerboundPacket},
+    connection::{Connection, Error, ServerboundPacket},
     nbt,
     packets::{
-        configuration, handshake, login,
+        configuration, deserialize, handshake, login,
         play::{
             self,
             clientbound::{ChunkData, GameEvent, LightData},
@@ -26,7 +26,7 @@ use net::{
 };
 
 #[tokio::main]
-async fn main() -> anyhow::Result<()> {
+async fn main() -> Result<(), Error> {
     let listener = TcpListener::bind("0.0.0.0:25565").await?;
     println!("Listening on port 25565");
     loop {
@@ -34,225 +34,246 @@ async fn main() -> anyhow::Result<()> {
         dbg!(src);
         let connection = Connection::new(stream);
         tokio::spawn(async move {
-            if let Err(err) = handle_connection(connection).await {
-                eprintln!("Error handling connection: {}", err);
-            }
+            let _ = handle_connection(connection).await;
         });
     }
 }
 
-async fn handle_connection(mut connection: Connection) -> anyhow::Result<()> {
+async fn handle_connection(mut connection: Connection) -> Result<(), Error> {
+    let mut last_keepalive = Instant::now();
+
+    loop {
+        match handle_packet(&mut connection, &mut last_keepalive).await {
+            Ok(packet) => packet,
+            Err(
+                err @ Error::DeserializeError {
+                    source: deserialize::Error::InvalidPacketId { .. },
+                },
+            ) => {
+                eprintln!("{err}");
+            }
+            Err(Error::ClientTimedOut) => return Ok(()),
+            Err(err) => {
+                eprintln!("Error handling connection: {err}");
+                let _ = connection.disconnect(&err.to_string()).await;
+                return Err(err);
+            }
+        };
+    }
+}
+
+async fn handle_packet(
+    connection: &mut Connection,
+    last_keepalive: &mut Instant,
+) -> Result<(), Error> {
     // https://minecraft.wiki/w/Java_Edition_protocol?oldid=2874788
     const PROTOCOL_VERSION: i32 = 769;
     const GAME_VERSION: &str = "1.21.4";
 
-    let mut last_keepalive = Instant::now();
+    match connection.recv().await? {
+        ServerboundPacket::Handshake(packet) => match packet {
+            handshake::serverbound::Packet::Intention {
+                protocol_version,
+                server_address,
+                server_port,
+                ..
+            } => {
+                assert_eq!(protocol_version, PROTOCOL_VERSION);
+                dbg!(server_address, server_port);
+            }
+        },
+        ServerboundPacket::Status(packet) => match packet {
+            status::serverbound::Packet::StatusRequest => {
+                let dt = chrono::Local::now();
+                let time_str = dt.format("%H:%M:%S").to_string();
 
-    loop {
-        let packet = connection.recv().await?;
-        match packet {
-            ServerboundPacket::Handshake(packet) => match packet {
-                handshake::serverbound::Packet::Intention {
-                    protocol_version,
-                    server_address,
-                    server_port,
-                    ..
-                } => {
-                    anyhow::ensure!(protocol_version == PROTOCOL_VERSION);
-                    dbg!(server_address, server_port);
-                }
-            },
-            ServerboundPacket::Status(packet) => match packet {
-                status::serverbound::Packet::StatusRequest => {
-                    let dt = chrono::Local::now();
-                    let time_str = dt.format("%H:%M:%S").to_string();
+                let status = Status {
+                    version: Version {
+                        name: GAME_VERSION,
+                        protocol: PROTOCOL_VERSION,
+                    },
+                    players: Players {
+                        max: dt.month(),
+                        online: dt.day(),
+                    },
+                    description: TextComponent { text: &time_str },
+                };
 
-                    let status = Status {
-                        version: Version {
-                            name: GAME_VERSION,
-                            protocol: PROTOCOL_VERSION,
+                connection
+                    .send(status::clientbound::Packet::StatusResponse { status })
+                    .await?;
+            }
+            status::serverbound::Packet::PingRequest { timestamp } => {
+                connection
+                    .send(status::clientbound::Packet::PongResponse { timestamp })
+                    .await?;
+            }
+        },
+        ServerboundPacket::Login(packet) => match packet {
+            login::serverbound::Packet::Hello { name, player_uuid } => {
+                dbg!(&name, player_uuid);
+                let uuid = Uuid::new_v4();
+                let username = &name;
+
+                connection
+                    .send(login::clientbound::Packet::LoginFinished { uuid, username })
+                    .await?;
+            }
+            _ => {}
+        },
+        ServerboundPacket::Configuration(packet) => match packet {
+            configuration::serverbound::Packet::ClientInformation { .. } => {
+                connection
+                    .send(configuration::clientbound::Packet::SelectKnownPacks {
+                        known_packs: &[("minecraft", "core", GAME_VERSION)],
+                    })
+                    .await?;
+            }
+            configuration::serverbound::Packet::FinishConfiguration => {
+                // https://minecraft.wiki/w/Java_Edition_protocol/FAQ#%E2%80%A6my_player_isn't_spawning!
+                connection
+                    .send(play::clientbound::Packet::Login {
+                        entity_id: 1,
+                        game_mode: 1,
+                        is_flat: true,
+                        enforces_secure_chat: true,
+                    })
+                    .await?;
+                connection
+                    .send(play::clientbound::Packet::GameEvent {
+                        event: GameEvent::StartChunks,
+                        value: 0.0,
+                    })
+                    .await?;
+
+                let chunk = Subchunk::demo();
+                connection
+                    .send(play::clientbound::Packet::LevelChunkWithLight {
+                        chunk_x: 0,
+                        chunk_z: 0,
+                        data: ChunkData {
+                            heightmaps: nbt!({
+                                WORLD_SURFACE: [-1i64; 22],
+                                MOTION_BLOCKING: [-1i64; 22],
+                            }),
+                            data: chunk.chunk_data(),
                         },
-                        players: Players {
-                            max: dt.month(),
-                            online: dt.day(),
-                        },
-                        description: TextComponent { text: &time_str },
-                    };
+                        light: LightData {},
+                    })
+                    .await?;
 
-                    connection
-                        .send(status::clientbound::Packet::StatusResponse { status })
-                        .await?;
+                let now = chrono::Local::now().time();
+                let minute_angle = now.num_seconds_from_midnight() * 256 / 3_600 % 256;
+                let abs_minute_angle;
+                let mirror_minute;
+                if minute_angle < 128 {
+                    abs_minute_angle = minute_angle;
+                    mirror_minute = false;
+                } else {
+                    abs_minute_angle = 256 - minute_angle;
+                    mirror_minute = true;
                 }
-                status::serverbound::Packet::PingRequest { timestamp } => {
-                    connection
-                        .send(status::clientbound::Packet::PongResponse { timestamp })
-                        .await?;
+                let hour_angle = now.num_seconds_from_midnight() * 256 / 24 / 3_600 % 256;
+                let abs_hour_angle;
+                let mirror_hour;
+                if hour_angle < 128 {
+                    abs_hour_angle = hour_angle;
+                    mirror_hour = false;
+                } else {
+                    abs_hour_angle = 256 - hour_angle;
+                    mirror_hour = true;
                 }
-            },
-            ServerboundPacket::Login(packet) => match packet {
-                login::serverbound::Packet::Hello { name, player_uuid } => {
-                    dbg!(&name, player_uuid);
-                    let uuid = Uuid::new_v4();
-                    let username = &name;
-
+                for i in 1..=4 {
                     connection
-                        .send(login::clientbound::Packet::LoginFinished { uuid, username })
-                        .await?;
-                }
-                _ => {}
-            },
-            ServerboundPacket::Configuration(packet) => match packet {
-                configuration::serverbound::Packet::ClientInformation { .. } => {
-                    connection
-                        .send(configuration::clientbound::Packet::SelectKnownPacks {
-                            known_packs: &[("minecraft", "core", GAME_VERSION)],
+                        .send(play::clientbound::Packet::AddEntity {
+                            entity_id: i + 10,
+                            entity_uuid: Uuid::new_v4(),
+                            entity_type: registries::entity_type("minecraft:phantom")
+                                .unwrap()
+                                .protocol_id,
+                            x: 8.0
+                                - f64::sin(f64::consts::PI * minute_angle as f64 / 128.0)
+                                    * i as f64,
+                            y: 8.0
+                                + f64::cos(f64::consts::PI * minute_angle as f64 / 128.0)
+                                    * i as f64,
+                            z: 15.5,
+                            pitch: ((256 + 64 - abs_minute_angle) % 256) as u8,
+                            yaw: if mirror_minute { 192 } else { 64 },
+                            head_yaw: 0,
+                            data: 0,
+                            velocity_x: 0,
+                            velocity_y: 0,
+                            velocity_z: 0,
                         })
                         .await?;
                 }
-                configuration::serverbound::Packet::FinishConfiguration => {
-                    // https://minecraft.wiki/w/Java_Edition_protocol/FAQ#%E2%80%A6my_player_isn't_spawning!
+                for i in 1..=3 {
                     connection
-                        .send(play::clientbound::Packet::Login {
-                            entity_id: 1,
-                            game_mode: 1,
-                            is_flat: true,
-                            enforces_secure_chat: true,
-                        })
-                        .await?;
-                    connection
-                        .send(play::clientbound::Packet::GameEvent {
-                            event: GameEvent::StartChunks,
-                            value: 0.0,
-                        })
-                        .await?;
-
-                    let chunk = Subchunk::demo();
-                    connection
-                        .send(play::clientbound::Packet::LevelChunkWithLight {
-                            chunk_x: 0,
-                            chunk_z: 0,
-                            data: ChunkData {
-                                heightmaps: nbt!({
-                                    WORLD_SURFACE: [-1i64; 22],
-                                    MOTION_BLOCKING: [-1i64; 22],
-                                }),
-                                data: chunk.chunk_data()?,
-                            },
-                            light: LightData {},
-                        })
-                        .await?;
-
-                    let now = chrono::Local::now().time();
-                    let minute_angle = now.num_seconds_from_midnight() * 256 / 3_600 % 256;
-                    let abs_minute_angle;
-                    let mirror_minute;
-                    if minute_angle < 128 {
-                        abs_minute_angle = minute_angle;
-                        mirror_minute = false;
-                    } else {
-                        abs_minute_angle = 256 - minute_angle;
-                        mirror_minute = true;
-                    }
-                    let hour_angle = now.num_seconds_from_midnight() * 256 / 24 / 3_600 % 256;
-                    let abs_hour_angle;
-                    let mirror_hour;
-                    if hour_angle < 128 {
-                        abs_hour_angle = hour_angle;
-                        mirror_hour = false;
-                    } else {
-                        abs_hour_angle = 256 - hour_angle;
-                        mirror_hour = true;
-                    }
-                    for i in 1..=4 {
-                        connection
-                            .send(play::clientbound::Packet::AddEntity {
-                                entity_id: i + 10,
-                                entity_uuid: Uuid::new_v4(),
-                                entity_type: registries::entity_type("minecraft:phantom")?
-                                    .protocol_id,
-                                x: 8.0
-                                    - f64::sin(f64::consts::PI * minute_angle as f64 / 128.0)
-                                        * i as f64,
-                                y: 8.0
-                                    + f64::cos(f64::consts::PI * minute_angle as f64 / 128.0)
-                                        * i as f64,
-                                z: 15.5,
-                                pitch: ((256 + 64 - abs_minute_angle) % 256) as u8,
-                                yaw: if mirror_minute { 192 } else { 64 },
-                                head_yaw: 0,
-                                data: 0,
-                                velocity_x: 0,
-                                velocity_y: 0,
-                                velocity_z: 0,
-                            })
-                            .await?;
-                    }
-                    for i in 1..=3 {
-                        connection
-                            .send(play::clientbound::Packet::AddEntity {
-                                entity_id: i + 20,
-                                entity_uuid: Uuid::new_v4(),
-                                entity_type: registries::entity_type("minecraft:phantom")?
-                                    .protocol_id,
-                                x: 8.0
-                                    - f64::sin(f64::consts::PI * hour_angle as f64 / 128.0)
-                                        * i as f64,
-                                y: 8.0
-                                    + f64::cos(f64::consts::PI * hour_angle as f64 / 128.0)
-                                        * i as f64,
-                                z: 15.5,
-                                pitch: ((256 + 64 - abs_hour_angle) % 256) as u8,
-                                yaw: if mirror_hour { 192 } else { 64 },
-                                head_yaw: 0,
-                                data: 0,
-                                velocity_x: 0,
-                                velocity_y: 0,
-                                velocity_z: 0,
-                            })
-                            .await?;
-                    }
-
-                    connection
-                        .send(play::clientbound::Packet::PlayerPosition {
-                            teleport_id: 0,
-                            x: 8.0,
-                            y: 1.0,
-                            z: 2.0,
-                            velocity_x: 0.0,
-                            velocity_y: 0.0,
-                            velocity_z: 0.0,
-                            yaw: 0.0,
-                            pitch: -23.0,
+                        .send(play::clientbound::Packet::AddEntity {
+                            entity_id: i + 20,
+                            entity_uuid: Uuid::new_v4(),
+                            entity_type: registries::entity_type("minecraft:phantom")
+                                .unwrap()
+                                .protocol_id,
+                            x: 8.0
+                                - f64::sin(f64::consts::PI * hour_angle as f64 / 128.0) * i as f64,
+                            y: 8.0
+                                + f64::cos(f64::consts::PI * hour_angle as f64 / 128.0) * i as f64,
+                            z: 15.5,
+                            pitch: ((256 + 64 - abs_hour_angle) % 256) as u8,
+                            yaw: if mirror_hour { 192 } else { 64 },
+                            head_yaw: 0,
+                            data: 0,
+                            velocity_x: 0,
+                            velocity_y: 0,
+                            velocity_z: 0,
                         })
                         .await?;
                 }
-                configuration::serverbound::Packet::SelectKnownPacks { known_packs } => {
-                    dbg!(known_packs);
 
-                    send_registry_data(&mut connection).await?;
+                connection
+                    .send(play::clientbound::Packet::PlayerPosition {
+                        teleport_id: 0,
+                        x: 8.0,
+                        y: 1.0,
+                        z: 2.0,
+                        velocity_x: 0.0,
+                        velocity_y: 0.0,
+                        velocity_z: 0.0,
+                        yaw: 0.0,
+                        pitch: -23.0,
+                    })
+                    .await?;
+            }
+            configuration::serverbound::Packet::SelectKnownPacks { known_packs } => {
+                dbg!(known_packs);
 
+                send_registry_data(connection).await?;
+
+                connection
+                    .send(configuration::clientbound::Packet::FinishConfiguration)
+                    .await?;
+            }
+            _ => {}
+        },
+        ServerboundPacket::Play(packet) => match packet {
+            play::serverbound::Packet::ClientTickEnd => {
+                if Instant::now() - *last_keepalive >= Duration::from_secs(10) {
                     connection
-                        .send(configuration::clientbound::Packet::FinishConfiguration)
+                        .send(play::clientbound::Packet::KeepAlive { keep_alive_id: 0 })
                         .await?;
+                    *last_keepalive = Instant::now();
                 }
-                _ => {}
-            },
-            ServerboundPacket::Play(packet) => match packet {
-                play::serverbound::Packet::ClientTickEnd => {
-                    if Instant::now() - last_keepalive >= Duration::from_secs(10) {
-                        connection
-                            .send(play::clientbound::Packet::KeepAlive { keep_alive_id: 0 })
-                            .await?;
-                        last_keepalive = Instant::now();
-                    }
-                }
-                _ => {}
-            },
-        }
+            }
+            _ => {}
+        },
     }
+
+    Ok(())
 }
 
-async fn send_registry_data(connection: &mut Connection) -> anyhow::Result<()> {
+async fn send_registry_data(connection: &mut Connection) -> Result<(), Error> {
     let damage_types = [
         "minecraft:arrow",
         "minecraft:bad_respawn_point",

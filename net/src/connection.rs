@@ -1,3 +1,6 @@
+use std::{io, time::Duration};
+
+use snafu::prelude::*;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::TcpStream,
@@ -5,7 +8,7 @@ use tokio::{
 
 use crate::packets::{
     configuration,
-    deserialize::{Deserialize, Deserializer},
+    deserialize::{self, Deserialize, Deserializer},
     handshake, login, play,
     serialize::{Serialize, Serializer},
     status,
@@ -18,7 +21,7 @@ pub struct Connection {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum State {
+pub enum State {
     Handshake,
     Status,
     Login,
@@ -27,8 +30,6 @@ enum State {
 }
 
 pub trait ClientboundPacket: Serialize {
-    #[doc(hidden)]
-    #[allow(private_interfaces)]
     fn expected_state(&self) -> State;
 }
 
@@ -41,6 +42,18 @@ pub enum ServerboundPacket {
     Play(play::serverbound::Packet),
 }
 
+#[derive(Debug, Snafu)]
+pub enum Error {
+    #[snafu(display("Client timed out"))]
+    ClientTimedOut,
+    #[snafu(transparent)]
+    DeserializeError { source: deserialize::Error },
+    #[snafu(transparent)]
+    IOError { source: io::Error },
+}
+
+const RECV_TIMEOUT: Duration = Duration::from_secs(10);
+
 impl Connection {
     pub fn new(stream: TcpStream) -> Self {
         Connection {
@@ -50,9 +63,9 @@ impl Connection {
         }
     }
 
-    async fn send_raw(&mut self, packet: &[u8]) -> anyhow::Result<()> {
+    async fn send_raw(&mut self, packet: &[u8]) -> Result<(), Error> {
         let mut s = Serializer::new();
-        s.serialize_prefixed_byte_array(packet)?;
+        s.serialize_prefixed_byte_array(packet);
         let write_buf = s.finish();
 
         self.stream.write_all(&write_buf).await?;
@@ -60,7 +73,7 @@ impl Connection {
         Ok(())
     }
 
-    async fn recv_raw(&mut self) -> anyhow::Result<Vec<u8>> {
+    async fn recv_raw(&mut self) -> Result<Vec<u8>, Error> {
         loop {
             let mut d = Deserializer::new(&self.recv_buf);
             if let Ok(packet) = d.deserialize_prefixed_byte_array() {
@@ -72,18 +85,24 @@ impl Connection {
                 return Ok(packet);
             }
 
-            self.stream.read_buf(&mut self.recv_buf).await?;
+            match tokio::time::timeout(RECV_TIMEOUT, self.stream.read_buf(&mut self.recv_buf)).await
+            {
+                Err(_) => ClientTimedOutSnafu.fail()?,
+                Ok(Err(e)) => return Err(e.into()),
+                Ok(Ok(_)) => {}
+            }
         }
     }
 
-    pub async fn send(&mut self, packet: impl ClientboundPacket) -> anyhow::Result<()> {
-        anyhow::ensure!(
-            self.state == packet.expected_state(),
-            "Invalid state for packet"
+    pub async fn send(&mut self, packet: impl ClientboundPacket) -> Result<(), Error> {
+        assert_eq!(
+            self.state,
+            packet.expected_state(),
+            "Invalid state for packet",
         );
 
         let mut s = Serializer::new();
-        packet.serialize(&mut s)?;
+        packet.serialize(&mut s);
         let raw = s.finish();
 
         self.send_raw(&raw).await?;
@@ -91,7 +110,7 @@ impl Connection {
         Ok(())
     }
 
-    pub async fn recv(&mut self) -> anyhow::Result<ServerboundPacket> {
+    pub async fn recv(&mut self) -> Result<ServerboundPacket, Error> {
         let raw = self.recv_raw().await?;
 
         match self.state {
@@ -146,9 +165,28 @@ impl Connection {
             }
         }
     }
+
+    pub async fn disconnect(mut self, reason: &str) -> Result<(), Error> {
+        match self.state {
+            State::Handshake | State::Status => {}
+            State::Login => {
+                self.send(login::clientbound::Packet::LoginDisconnect { reason })
+                    .await?;
+            }
+            State::Configuration => {
+                self.send(configuration::clientbound::Packet::Disconnect { reason })
+                    .await?;
+            }
+            State::Play => {
+                self.send(play::clientbound::Packet::Disconnect { reason })
+                    .await?;
+            }
+        }
+        Ok(())
+    }
 }
 
-fn deserialize<'de, T: Deserialize<'de>>(bytes: &'de [u8]) -> anyhow::Result<T> {
+fn deserialize<'de, T: Deserialize<'de>>(bytes: &'de [u8]) -> Result<T, deserialize::Error> {
     let mut d = Deserializer::new(bytes);
     let result = T::deserialize(&mut d)?;
     d.finish()?;
@@ -176,7 +214,7 @@ impl ClientboundPacket for configuration::clientbound::Packet<'_> {
     }
 }
 
-impl ClientboundPacket for play::clientbound::Packet {
+impl ClientboundPacket for play::clientbound::Packet<'_> {
     #[allow(private_interfaces)]
     fn expected_state(&self) -> State {
         State::Play

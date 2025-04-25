@@ -53,20 +53,22 @@ impl Subchunk {
         self.blocks[index]
     }
 
-    pub fn chunk_data(&self) -> anyhow::Result<Vec<u8>> {
+    pub fn chunk_data(&self) -> Vec<u8> {
         let mut s = Serializer::new();
 
         // Block count
         let block_count = self.blocks.iter().filter(|&&b| b != Block::Air).count() as i16;
-        s.serialize_short(block_count)?;
+        s.serialize_short(block_count);
 
         // Block states
         // https://minecraft.wiki/w/Minecraft_Wiki:Projects/wiki.vg_merge/Chunk_Format?oldid=2845070#Paletted_Container_structure
-        s.serialize_ubyte(4)?; // Bits per entry
+        s.serialize_ubyte(4); // Bits per entry
         s.serialize_prefixed_array(
             &[
                 0,
-                registries::block_state("minecraft:gray_concrete", &[])?.id,
+                registries::block_state("minecraft:gray_concrete", &[])
+                    .unwrap()
+                    .id,
                 registries::block_state(
                     "minecraft:deepslate_tile_stairs",
                     &[
@@ -75,7 +77,8 @@ impl Subchunk {
                         ("shape", "straight"),
                         ("waterlogged", "false"),
                     ],
-                )?
+                )
+                .unwrap()
                 .id,
                 registries::block_state(
                     "minecraft:deepslate_tile_stairs",
@@ -85,7 +88,8 @@ impl Subchunk {
                         ("shape", "straight"),
                         ("waterlogged", "false"),
                     ],
-                )?
+                )
+                .unwrap()
                 .id,
                 registries::block_state(
                     "minecraft:deepslate_tile_stairs",
@@ -95,7 +99,8 @@ impl Subchunk {
                         ("shape", "straight"),
                         ("waterlogged", "false"),
                     ],
-                )?
+                )
+                .unwrap()
                 .id,
                 registries::block_state(
                     "minecraft:deepslate_tile_stairs",
@@ -105,22 +110,23 @@ impl Subchunk {
                         ("shape", "straight"),
                         ("waterlogged", "false"),
                     ],
-                )?
+                )
+                .unwrap()
                 .id,
             ],
             |s, b| s.serialize_varint(*b),
-        )?; // Pallete
-        s.serialize_varint(16 * 16 * 16 / 2 / 8)?; // Length in i64s
+        ); // Pallete
+        s.serialize_varint(16 * 16 * 16 / 2 / 8); // Length in i64s
         for chunk in self.blocks.chunks(2) {
             let x = chunk[0] as u8 & 0x0F;
             let y = chunk[1] as u8 & 0x0F;
             let b = (x << 4) | y;
-            s.serialize_ubyte(b)?;
+            s.serialize_ubyte(b);
         }
 
         // Biomes
-        s.serialize_byte_array(&[0x00, 0x00, 0x00])?;
+        s.serialize_byte_array(&[0x00, 0x00, 0x00]);
 
-        Ok(s.finish())
+        s.finish()
     }
 }

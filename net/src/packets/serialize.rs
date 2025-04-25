@@ -3,7 +3,7 @@ use uuid::Uuid;
 use crate::nbt;
 
 pub trait Serialize {
-    fn serialize(&self, s: &mut Serializer) -> anyhow::Result<()>;
+    fn serialize(&self, s: &mut Serializer);
 }
 
 pub struct Serializer {
@@ -12,9 +12,8 @@ pub struct Serializer {
 
 macro_rules! serialize_primitive {
     ($name:ident($ty:ty)) => {
-        pub fn $name(&mut self, value: $ty) -> anyhow::Result<()> {
+        pub fn $name(&mut self, value: $ty) {
             self.buf.extend(value.to_be_bytes());
-            Ok(())
         }
     };
 }
@@ -28,19 +27,16 @@ impl Serializer {
         self.buf
     }
 
-    pub fn serialize_boolean(&mut self, value: bool) -> anyhow::Result<()> {
+    pub fn serialize_boolean(&mut self, value: bool) {
         self.buf.push(value as u8);
-        Ok(())
     }
 
-    pub fn serialize_byte(&mut self, value: i8) -> anyhow::Result<()> {
+    pub fn serialize_byte(&mut self, value: i8) {
         self.buf.push(value as u8);
-        Ok(())
     }
 
-    pub fn serialize_ubyte(&mut self, value: u8) -> anyhow::Result<()> {
+    pub fn serialize_ubyte(&mut self, value: u8) {
         self.buf.push(value);
-        Ok(())
     }
 
     serialize_primitive!(serialize_short(i16));
@@ -52,7 +48,7 @@ impl Serializer {
     serialize_primitive!(serialize_float(f32));
     serialize_primitive!(serialize_double(f64));
 
-    pub fn serialize_varint(&mut self, value: i32) -> anyhow::Result<()> {
+    pub fn serialize_varint(&mut self, value: i32) {
         let mut value = value as u32;
         loop {
             let mut byte = (value & 0x7F) as u8;
@@ -65,10 +61,9 @@ impl Serializer {
                 break;
             }
         }
-        Ok(())
     }
 
-    pub fn serialize_varlong(&mut self, value: i64) -> anyhow::Result<()> {
+    pub fn serialize_varlong(&mut self, value: i64) {
         let mut value = value as u64;
         loop {
             let mut byte = (value & 0x7F) as u8;
@@ -81,64 +76,49 @@ impl Serializer {
                 break;
             }
         }
-        Ok(())
     }
 
-    pub fn serialize_string(&mut self, value: &str) -> anyhow::Result<()> {
+    pub fn serialize_string(&mut self, value: &str) {
         self.serialize_prefixed_byte_array(value.as_bytes())
     }
 
-    pub fn serialize_nbt(&mut self, value: &nbt::Tag) -> anyhow::Result<()> {
-        value.serialize(self)
+    pub fn serialize_nbt(&mut self, value: &nbt::Tag) {
+        value.serialize(self);
     }
 
-    pub fn serialize_uuid(&mut self, value: Uuid) -> anyhow::Result<()> {
+    pub fn serialize_uuid(&mut self, value: Uuid) {
         self.buf.extend_from_slice(value.as_bytes());
-        Ok(())
     }
 
     pub fn serialize_prefixed_optional<T>(
         &mut self,
         value: &Option<T>,
-        mut f: impl FnMut(&mut Self, &T) -> anyhow::Result<()>,
-    ) -> anyhow::Result<()> {
-        self.serialize_boolean(value.is_some())?;
+        mut f: impl FnMut(&mut Self, &T),
+    ) {
+        self.serialize_boolean(value.is_some());
         if let Some(value) = value {
-            f(self, &value)?;
+            f(self, &value);
         }
-        Ok(())
     }
 
-    pub fn serialize_array<T>(
-        &mut self,
-        array: &[T],
-        mut f: impl FnMut(&mut Self, &T) -> anyhow::Result<()>,
-    ) -> anyhow::Result<()> {
+    pub fn serialize_array<T>(&mut self, array: &[T], mut f: impl FnMut(&mut Self, &T)) {
         for item in array {
-            f(self, item)?;
+            f(self, item);
         }
-        Ok(())
     }
 
-    pub fn serialize_byte_array(&mut self, array: &[u8]) -> anyhow::Result<()> {
+    pub fn serialize_byte_array(&mut self, array: &[u8]) {
         self.buf.extend_from_slice(array);
-        Ok(())
     }
 
-    pub fn serialize_prefixed_array<T>(
-        &mut self,
-        array: &[T],
-        f: impl FnMut(&mut Self, &T) -> anyhow::Result<()>,
-    ) -> anyhow::Result<()> {
-        self.serialize_varint(array.len() as i32)?;
-        self.serialize_array(array, f)?;
-        Ok(())
+    pub fn serialize_prefixed_array<T>(&mut self, array: &[T], f: impl FnMut(&mut Self, &T)) {
+        self.serialize_varint(array.len() as i32);
+        self.serialize_array(array, f);
     }
 
-    pub fn serialize_prefixed_byte_array(&mut self, array: &[u8]) -> anyhow::Result<()> {
-        self.serialize_varint(array.len() as i32)?;
-        self.serialize_byte_array(array)?;
-        Ok(())
+    pub fn serialize_prefixed_byte_array(&mut self, array: &[u8]) {
+        self.serialize_varint(array.len() as i32);
+        self.serialize_byte_array(array);
     }
 }
 
@@ -150,7 +130,7 @@ mod tests {
     fn test_serialize_int() {
         fn test(n: i32, expected: Vec<u8>) {
             let mut serializer = Serializer::new();
-            serializer.serialize_int(n).unwrap();
+            serializer.serialize_int(n);
             assert_eq!(serializer.finish(), expected);
         }
 
@@ -165,7 +145,7 @@ mod tests {
     fn test_serialize_varint() {
         fn test(n: i32, expected: Vec<u8>) {
             let mut serializer = Serializer::new();
-            serializer.serialize_varint(n).unwrap();
+            serializer.serialize_varint(n);
             assert_eq!(serializer.finish(), expected);
         }
 
@@ -186,7 +166,7 @@ mod tests {
     fn test_serialize_varlong() {
         fn test(n: i64, expected: Vec<u8>) {
             let mut serializer = Serializer::new();
-            serializer.serialize_varlong(n).unwrap();
+            serializer.serialize_varlong(n);
             assert_eq!(serializer.finish(), expected);
         }
 
