@@ -29,6 +29,18 @@ pub enum Packet<'a> {
     Disconnect {
         reason: &'a str,
     },
+    EntityPositionSync {
+        entity_id: i32,
+        x: f64,
+        y: f64,
+        z: f64,
+        velocity_x: f64,
+        velocity_y: f64,
+        velocity_z: f64,
+        yaw: f32,
+        pitch: f32,
+        on_ground: bool,
+    },
     GameEvent {
         event: GameEvent,
         value: f32,
@@ -123,6 +135,30 @@ impl Serialize for Packet<'_> {
             Self::Disconnect { reason } => {
                 s.serialize_varint(0x1D);
                 s.serialize_nbt(&nbt::Tag::from(*reason));
+            }
+            Self::EntityPositionSync {
+                entity_id,
+                x,
+                y,
+                z,
+                velocity_x,
+                velocity_y,
+                velocity_z,
+                yaw,
+                pitch,
+                on_ground,
+            } => {
+                s.serialize_varint(0x20);
+                s.serialize_varint(*entity_id);
+                s.serialize_double(*x);
+                s.serialize_double(*y);
+                s.serialize_double(*z);
+                s.serialize_double(*velocity_x);
+                s.serialize_double(*velocity_y);
+                s.serialize_double(*velocity_z);
+                s.serialize_float(*yaw);
+                s.serialize_float(*pitch);
+                s.serialize_boolean(*on_ground);
             }
             Self::GameEvent { event, value } => {
                 s.serialize_varint(0x23);

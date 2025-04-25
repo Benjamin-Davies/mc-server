@@ -24,11 +24,6 @@ impl Subchunk {
 
     pub fn demo() -> Self {
         let mut subchunk = Self::empty();
-        for x in 0..16 {
-            for z in 0..16 {
-                subchunk.set_block(x, 0, z, Block::GrayConcrete);
-            }
-        }
         subchunk.set_block(7, 7, 15, Block::StairsWestTop);
         subchunk.set_block(7, 8, 15, Block::StairsWestBottom);
         subchunk.set_block(8, 7, 15, Block::StairsEastTop);

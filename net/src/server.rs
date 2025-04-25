@@ -6,7 +6,7 @@ use std::{
 
 use async_trait::async_trait;
 use snafu::prelude::*;
-use tokio::net::{TcpListener, ToSocketAddrs};
+use tokio::net::TcpListener;
 use uuid::Uuid;
 
 use crate::{
@@ -34,6 +34,7 @@ pub trait Callbacks: Send + Sync {
     }
 
     async fn on_login(&self, conn: &mut Connection) -> Result<(), Error>;
+    async fn on_tick(&self, conn: &mut Connection) -> Result<(), Error>;
 }
 
 pub struct Server {
@@ -65,9 +66,9 @@ impl Server {
         }
     }
 
-    pub async fn listen(self, addr: impl ToSocketAddrs) -> Result<(), Error> {
+    pub async fn listen(self, addr: &str) -> Result<(), Error> {
         let listener = TcpListener::bind(addr).await?;
-        println!("Listening on port 25565");
+        println!("Listening at {addr}");
         let server = Arc::new(self);
         loop {
             let (stream, _) = listener.accept().await?;
@@ -181,6 +182,8 @@ impl Client {
                             .await?;
                         self.last_keepalive = Instant::now();
                     }
+
+                    self.server.callbacks.on_tick(&mut self.connection).await?;
                 }
                 _ => {}
             },
