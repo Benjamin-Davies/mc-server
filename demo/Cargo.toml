@@ -1,0 +1,12 @@
+[package]
+name = "demo"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+async-trait = "0.1.88"
+chrono = "0.4.40"
+tokio = { version = "1.44.2", features = ["macros", "rt-multi-thread"] }
+uuid = { version = "1.16.0", features = ["v4"] }
+
+net.workspace = true

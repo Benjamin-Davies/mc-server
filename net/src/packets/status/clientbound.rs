@@ -10,7 +10,7 @@ pub enum Packet<'a> {
 pub struct Status<'a> {
     pub version: Version<'a>,
     pub players: Players,
-    pub description: TextComponent<'a>,
+    pub description: TextComponent,
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -26,8 +26,8 @@ pub struct Players {
 }
 
 #[derive(Debug, serde::Serialize)]
-pub struct TextComponent<'a> {
-    pub text: &'a str,
+pub struct TextComponent {
+    pub text: String,
 }
 
 impl Serialize for Packet<'_> {

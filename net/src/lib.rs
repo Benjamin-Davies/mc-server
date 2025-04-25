@@ -5,3 +5,4 @@ pub mod connection;
 pub mod nbt;
 pub mod packets;
 pub mod registries;
+pub mod server;
