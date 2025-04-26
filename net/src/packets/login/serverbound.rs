@@ -1,29 +1,13 @@
-use uuid::Uuid;
-
-use crate::{
-    connection::State,
-    packets::deserialize::{Deserialize, Deserializer, Error, InvalidPacketIdSnafu},
+use crate::packets::deserialize::{
+    Deserialize,
+    types::{string, uuid},
 };
 
-#[derive(Debug)]
+#[derive(Debug, Deserialize)]
+#[packet(state = Login)]
 pub enum Packet {
-    Hello { name: String, player_uuid: Uuid },
+    #[packet(id = 0x00)]
+    Hello { name: string, player_uuid: uuid },
+    #[packet(id = 0x03)]
     LoginAcknowledged,
-}
-
-impl<'de> Deserialize<'de> for Packet {
-    fn deserialize(d: &mut Deserializer<'de>) -> Result<Self, Error> {
-        match d.deserialize_varint()? {
-            0x00 => Ok(Packet::Hello {
-                name: d.deserialize_string()?.to_owned(),
-                player_uuid: d.deserialize_uuid()?,
-            }),
-            0x03 => Ok(Packet::LoginAcknowledged),
-            packet_id => InvalidPacketIdSnafu {
-                state: State::Login,
-                packet_id,
-            }
-            .fail(),
-        }
-    }
 }

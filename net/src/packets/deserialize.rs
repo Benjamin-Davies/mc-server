@@ -5,6 +5,31 @@ use uuid::Uuid;
 
 use crate::connection::State;
 
+pub use net_derive::Deserialize;
+
+#[allow(non_camel_case_types)]
+pub mod types {
+    pub type boolean = bool;
+
+    pub type byte = i8;
+    pub type ubyte = u8;
+    pub type short = i16;
+    pub type ushort = u16;
+    pub type int = i32;
+    pub type uint = u32;
+    pub type long = i64;
+    pub type ulong = u64;
+    pub type float = f32;
+    pub type double = f64;
+
+    pub type string = String;
+    pub type uuid = ::uuid::Uuid;
+    pub type varint = i32;
+    pub type varlong = i64;
+    pub type prefixed_array<T> = Vec<T>;
+    pub type prefixed_byte_array = Vec<u8>;
+}
+
 pub trait Deserialize<'de>: Sized {
     fn deserialize(d: &mut Deserializer<'de>) -> Result<Self, Error>;
 }
@@ -34,7 +59,7 @@ pub enum Error {
     )]
     InvalidEnumVariant { enum_name: &'static str, value: i32 },
     #[snafu(transparent)]
-    Utf8Error { source: std::str::Utf8Error },
+    Utf8Error { source: std::string::FromUtf8Error },
 }
 
 macro_rules! deserialize_primitive {
@@ -66,43 +91,43 @@ impl<'de> Deserializer<'de> {
         bytes
     }
 
-    pub fn deserialize_boolean(&mut self) -> Result<bool, Error> {
+    pub fn deserialize_boolean(&mut self) -> Result<types::boolean, Error> {
         self.deserialize_ubyte().map(|byte| byte != 0)
     }
 
-    pub fn deserialize_byte(&mut self) -> Result<i8, Error> {
+    pub fn deserialize_byte(&mut self) -> Result<types::byte, Error> {
         self.deserialize_ubyte().map(|byte| byte as i8)
     }
 
-    pub fn deserialize_ubyte(&mut self) -> Result<u8, Error> {
+    pub fn deserialize_ubyte(&mut self) -> Result<types::ubyte, Error> {
         ensure!(!self.bytes.is_empty(), EndOfPacketSnafu);
         let byte = self.bytes[0];
         self.bytes = &self.bytes[1..];
         Ok(byte)
     }
 
-    deserialize_primitive!(deserialize_short(i16));
-    deserialize_primitive!(deserialize_ushort(u16));
-    deserialize_primitive!(deserialize_int(i32));
-    deserialize_primitive!(deserialize_uint(u32));
-    deserialize_primitive!(deserialize_long(i64));
-    deserialize_primitive!(deserialize_ulong(u64));
-    deserialize_primitive!(deserialize_float(f32));
-    deserialize_primitive!(deserialize_double(f64));
+    deserialize_primitive!(deserialize_short(types::short));
+    deserialize_primitive!(deserialize_ushort(types::ushort));
+    deserialize_primitive!(deserialize_int(types::int));
+    deserialize_primitive!(deserialize_uint(types::uint));
+    deserialize_primitive!(deserialize_long(types::long));
+    deserialize_primitive!(deserialize_ulong(types::ulong));
+    deserialize_primitive!(deserialize_float(types::float));
+    deserialize_primitive!(deserialize_double(types::double));
 
-    pub fn deserialize_string(&mut self) -> Result<&'de str, Error> {
+    pub fn deserialize_string(&mut self) -> Result<types::string, Error> {
         self.deserialize_prefixed_byte_array()
-            .and_then(|bytes| str::from_utf8(bytes).map_err(Error::from))
+            .and_then(|bytes| String::from_utf8(bytes).map_err(Error::from))
     }
 
-    pub fn deserialize_uuid(&mut self) -> Result<Uuid, Error> {
+    pub fn deserialize_uuid(&mut self) -> Result<types::uuid, Error> {
         ensure!(self.bytes.len() >= mem::size_of::<Uuid>(), EndOfPacketSnafu);
         let value = Uuid::from_bytes(self.bytes[..mem::size_of::<Uuid>()].try_into().unwrap());
         self.bytes = &self.bytes[mem::size_of::<Uuid>()..];
         Ok(value)
     }
 
-    pub fn deserialize_varint(&mut self) -> Result<i32, Error> {
+    pub fn deserialize_varint(&mut self) -> Result<types::varint, Error> {
         let mut result = 0;
         let mut shift = 0;
         loop {
@@ -118,7 +143,7 @@ impl<'de> Deserializer<'de> {
         }
     }
 
-    pub fn deserialize_varlong(&mut self) -> Result<i64, Error> {
+    pub fn deserialize_varlong(&mut self) -> Result<types::varlong, Error> {
         let mut result = 0;
         let mut shift = 0;
         loop {
@@ -133,24 +158,23 @@ impl<'de> Deserializer<'de> {
         }
     }
 
-    pub fn deserialize_prefixed_array<T>(
+    pub fn deserialize_prefixed_array<T: Deserialize<'de>>(
         &mut self,
-        f: impl Fn(&mut Deserializer<'de>) -> Result<T, Error>,
-    ) -> Result<Vec<T>, Error> {
+    ) -> Result<types::prefixed_array<T>, Error> {
         let length = self.deserialize_varint()?;
         let mut result = Vec::with_capacity(length as usize);
         for _ in 0..length {
-            result.push(f(self)?);
+            result.push(T::deserialize(self)?);
         }
         Ok(result)
     }
 
-    pub fn deserialize_prefixed_byte_array(&mut self) -> Result<&'de [u8], Error> {
+    pub fn deserialize_prefixed_byte_array(&mut self) -> Result<types::prefixed_byte_array, Error> {
         let length = self.deserialize_varint()?;
         ensure!(self.bytes.len() >= length as usize, EndOfPacketSnafu);
         let bytes = &self.bytes[..length as usize];
         self.bytes = &self.bytes[length as usize..];
-        Ok(bytes)
+        Ok(bytes.to_owned())
     }
 }
 

@@ -1,6 +1,7 @@
 [workspace]
-members = ["demo", "net"]
+members = ["demo", "net", "net-derive"]
 resolver = "3"
 
 [workspace.dependencies]
 net.path = "net"
+net-derive.path = "net-derive"

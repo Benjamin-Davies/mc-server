@@ -1,50 +1,27 @@
-use crate::{
-    connection::State,
-    packets::deserialize::{
-        Deserialize, Deserializer, Error, InvalidEnumVariantSnafu, InvalidPacketIdSnafu,
-    },
+use crate::packets::deserialize::{
+    Deserialize,
+    types::{string, ushort, varint},
 };
 
-#[derive(Debug)]
+#[derive(Debug, Deserialize)]
+#[packet(state = Handshake)]
 pub enum Packet {
+    #[packet(id = 0)]
     Intention {
-        protocol_version: i32,
-        server_address: String,
-        server_port: u16,
+        protocol_version: varint,
+        server_address: string,
+        server_port: ushort,
         next_state: NextState,
     },
 }
 
-#[derive(Debug)]
+#[derive(Debug, Deserialize)]
+#[packet(state = Handshake)]
 pub enum NextState {
+    #[packet(id = 1)]
     Status,
+    #[packet(id = 2)]
     Login,
+    #[packet(id = 3)]
     Transfer,
-}
-
-impl<'de> Deserialize<'de> for Packet {
-    fn deserialize(d: &mut Deserializer<'de>) -> Result<Self, Error> {
-        match d.deserialize_varint()? {
-            0x00 => Ok(Packet::Intention {
-                protocol_version: d.deserialize_varint()?,
-                server_address: d.deserialize_string()?.to_owned(),
-                server_port: d.deserialize_ushort()?,
-                next_state: match d.deserialize_varint()? {
-                    1 => NextState::Status,
-                    2 => NextState::Login,
-                    3 => NextState::Transfer,
-                    value => InvalidEnumVariantSnafu {
-                        enum_name: "Next state",
-                        value,
-                    }
-                    .fail()?,
-                },
-            }),
-            packet_id => InvalidPacketIdSnafu {
-                state: State::Handshake,
-                packet_id,
-            }
-            .fail(),
-        }
-    }
 }
