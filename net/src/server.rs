@@ -82,16 +82,14 @@ impl Server {
                 server: server.clone(),
             };
             tokio::spawn(async move {
-                if let Err(err) = client.handle_connection().await {
-                    eprintln!("Error handling connection: {}", err);
-                }
+                client.handle_connection().await;
             });
         }
     }
 }
 
 impl Client {
-    async fn handle_connection(mut self) -> Result<(), Error> {
+    async fn handle_connection(mut self) {
         loop {
             match self.handle_packet().await {
                 Ok(packet) => packet,
@@ -107,11 +105,11 @@ impl Client {
                 }
                 Err(Error::ConnectionError {
                     source: connection::Error::ClientTimedOut,
-                }) => return Ok(()),
+                }) => return,
                 Err(err) => {
                     eprintln!("Error handling connection: {err}");
                     let _ = self.connection.disconnect(&err.to_string()).await;
-                    return Err(err);
+                    return;
                 }
             };
         }
