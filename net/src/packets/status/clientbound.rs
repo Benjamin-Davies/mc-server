@@ -4,7 +4,7 @@ use crate::packets::serialize::{Serialize, types};
 pub enum Packet<'a> {
     #[packet(id = 0x00)]
     StatusResponse {
-        #[packet(serialize_with = s.serialize_string(&serde_json::to_string(status).unwrap().as_str()))]
+        #[packet(serialize_with = s.serialize_json(status))]
         status: Status<'a>,
     },
     #[packet(id = 0x01)]

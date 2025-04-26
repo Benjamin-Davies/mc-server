@@ -7,7 +7,7 @@ use crate::{
 pub enum Packet<'a> {
     #[packet(id = 0x02)]
     Disconnect {
-        #[packet(serialize_with = nbt::Tag::from(*reason).serialize(s))]
+        #[packet(serialize_with = s.serialize_nbt(*reason))]
         reason: &'a str,
     },
     #[packet(id = 0x03)]

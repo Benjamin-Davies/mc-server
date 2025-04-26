@@ -2,6 +2,8 @@ use paste::paste;
 
 pub use net_derive::Serialize;
 
+use crate::nbt;
+
 #[allow(non_camel_case_types)]
 pub mod types {
     pub type boolean = bool;
@@ -159,6 +161,16 @@ impl Serializer {
     pub fn serialize_prefixed_byte_array(&mut self, array: types::prefixed_byte_array) {
         self.serialize_varint(array.len() as i32);
         self.serialize_byte_array(array);
+    }
+
+    pub fn serialize_nbt(&mut self, data: impl Into<nbt::Tag>) {
+        let tag: nbt::Tag = data.into();
+        tag.serialize(self);
+    }
+
+    pub fn serialize_json(&mut self, data: impl serde::Serialize) {
+        let json = serde_json::to_string(&data).unwrap();
+        self.serialize_string(&json);
     }
 }
 

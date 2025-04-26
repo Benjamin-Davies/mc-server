@@ -27,7 +27,7 @@ pub enum Packet<'a> {
     ChunkBatchStart,
     #[packet(id = 0x1D)]
     Disconnect {
-        #[packet(serialize_with = nbt::Tag::from(*reason).serialize(s))]
+        #[packet(serialize_with = s.serialize_nbt(*reason))]
         reason: &'a str,
     },
     #[packet(id = 0x20)]
