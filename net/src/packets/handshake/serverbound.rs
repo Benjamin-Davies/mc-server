@@ -1,16 +1,13 @@
-use crate::packets::deserialize::{
-    Deserialize,
-    types::{string, ushort, varint},
-};
+use crate::packets::deserialize::{Deserialize, types};
 
 #[derive(Debug, Deserialize)]
 #[packet(state = Handshake)]
 pub enum Packet {
     #[packet(id = 0)]
     Intention {
-        protocol_version: varint,
-        server_address: string,
-        server_port: ushort,
+        protocol_version: types::varint,
+        server_address: types::string,
+        server_port: types::ushort,
         next_state: NextState,
     },
 }

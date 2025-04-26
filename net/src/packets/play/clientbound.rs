@@ -134,7 +134,7 @@ impl Serialize for Packet<'_> {
             }
             Self::Disconnect { reason } => {
                 s.serialize_varint(0x1D);
-                s.serialize_nbt(&nbt::Tag::from(*reason));
+                nbt::Tag::from(*reason).serialize(s);
             }
             Self::EntityPositionSync {
                 entity_id,
@@ -190,7 +190,7 @@ impl Serialize for Packet<'_> {
                 s.serialize_varint(0x2C);
                 s.serialize_int(*entity_id);
                 s.serialize_boolean(false);
-                s.serialize_prefixed_array(&["overworld"], |s, item| s.serialize_string(item));
+                s.serialize_prefixed_array_with(&["overworld"], |s, item| s.serialize_string(item));
                 s.serialize_varint(1);
                 s.serialize_varint(8);
                 s.serialize_varint(8);
@@ -243,7 +243,7 @@ impl Serialize for Packet<'_> {
 
 impl Serialize for ChunkData {
     fn serialize(&self, s: &mut Serializer) {
-        s.serialize_nbt(&self.heightmaps);
+        self.heightmaps.serialize(s);
         s.serialize_prefixed_byte_array(&self.data);
         s.serialize_varint(0);
     }
@@ -251,10 +251,10 @@ impl Serialize for ChunkData {
 
 impl Serialize for LightData {
     fn serialize(&self, s: &mut Serializer) {
-        s.serialize_prefixed_array(&[0], |s, l| s.serialize_long(*l));
-        s.serialize_prefixed_array(&[0], |s, l| s.serialize_long(*l));
-        s.serialize_prefixed_array(&[0], |s, l| s.serialize_long(*l));
-        s.serialize_prefixed_array(&[0], |s, l| s.serialize_long(*l));
+        s.serialize_prefixed_array_with(&[0], |s, item| s.serialize_long(*item));
+        s.serialize_prefixed_array_with(&[0], |s, item| s.serialize_long(*item));
+        s.serialize_prefixed_array_with(&[0], |s, item| s.serialize_long(*item));
+        s.serialize_prefixed_array_with(&[0], |s, item| s.serialize_long(*item));
         s.serialize_varint(0);
         s.serialize_varint(0);
     }

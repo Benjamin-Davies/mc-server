@@ -11,42 +11,63 @@ pub enum Packet<'a> {
     FinishConfiguration,
     RegistryData {
         registry_id: &'a str,
-        entries: &'a [(&'a str, Option<nbt::Tag>)],
+        entries: &'a [RegistryEntry<'a>],
     },
     SelectKnownPacks {
-        known_packs: &'a [(&'a str, &'a str, &'a str)],
+        known_packs: &'a [KnownPack<'a>],
     },
+}
+
+#[derive(Debug)]
+pub struct RegistryEntry<'a> {
+    pub entry_id: &'a str,
+    pub entry_data: Option<nbt::Tag>,
+}
+
+#[derive(Debug)]
+pub struct KnownPack<'a> {
+    pub namespace: &'a str,
+    pub id: &'a str,
+    pub version: &'a str,
 }
 
 impl Serialize for Packet<'_> {
     fn serialize(&self, s: &mut Serializer) {
         match self {
-            Packet::Disconnect { reason } => {
+            &Packet::Disconnect { reason } => {
                 s.serialize_varint(0x02);
-                s.serialize_nbt(&nbt::Tag::from(*reason));
+                nbt::Tag::from(reason).serialize(s);
             }
-            Packet::FinishConfiguration => {
+            &Packet::FinishConfiguration => {
                 s.serialize_varint(0x03);
             }
-            Packet::RegistryData {
+            &Packet::RegistryData {
                 registry_id,
                 entries,
             } => {
                 s.serialize_varint(0x07);
                 s.serialize_string(registry_id);
-                s.serialize_prefixed_array(entries, |s, (entry_id, entry_data)| {
-                    s.serialize_string(entry_id);
-                    s.serialize_prefixed_optional(entry_data, |s, data| s.serialize_nbt(data));
-                });
+                s.serialize_prefixed_array(entries);
             }
             Packet::SelectKnownPacks { known_packs } => {
                 s.serialize_varint(0x0E);
-                s.serialize_prefixed_array(known_packs, |s, (namespace, id, version)| {
-                    s.serialize_string(namespace);
-                    s.serialize_string(id);
-                    s.serialize_string(version);
-                });
+                s.serialize_prefixed_array(known_packs);
             }
         }
+    }
+}
+
+impl Serialize for RegistryEntry<'_> {
+    fn serialize(&self, s: &mut Serializer) {
+        s.serialize_string(self.entry_id);
+        s.serialize_prefixed_optional(&self.entry_data);
+    }
+}
+
+impl Serialize for KnownPack<'_> {
+    fn serialize(&self, s: &mut Serializer) {
+        s.serialize_string(self.namespace);
+        s.serialize_string(self.id);
+        s.serialize_string(self.version);
     }
 }

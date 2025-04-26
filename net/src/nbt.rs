@@ -160,13 +160,13 @@ impl Tag {
             }
             Tag::List(_) => todo!(),
             Tag::Compound(value) => {
-                s.serialize_array(value, |s, (name, item)| item.serialize_named(s, name));
+                s.serialize_array_with(value, |s, (name, item)| item.serialize_named(s, name));
                 Tag::End.serialize_unnamed(s);
             }
             Tag::IntArray(_) => todo!(),
             Tag::LongArray(value) => {
                 s.serialize_int(value.len() as i32);
-                s.serialize_array(value, |s, item| s.serialize_long(*item));
+                s.serialize_array_with(value, |s, item| s.serialize_long(*item));
             }
         }
     }

@@ -13,7 +13,11 @@ use crate::{
     connection::{self, Connection, ServerboundPacket},
     nbt,
     packets::{
-        configuration, deserialize, handshake, login, play,
+        configuration::{
+            self,
+            clientbound::{KnownPack, RegistryEntry},
+        },
+        deserialize, handshake, login, play,
         status::{
             self,
             clientbound::{Players, Status, TextComponent, Version},
@@ -158,7 +162,11 @@ impl Client {
                 configuration::serverbound::Packet::ClientInformation { .. } => {
                     self.connection
                         .send(configuration::clientbound::Packet::SelectKnownPacks {
-                            known_packs: &[("minecraft", "core", GAME_VERSION)],
+                            known_packs: &[KnownPack {
+                                namespace: "minecraft",
+                                id: "core",
+                                version: GAME_VERSION,
+                            }],
                         })
                         .await?;
                 }
@@ -245,17 +253,15 @@ async fn send_registry_data(connection: &mut Connection) -> Result<(), Error> {
         "minecraft:wither_skull",
     ]
     .into_iter()
-    .map(|key| {
-        (
-            key,
-            Some(nbt!(
-                {
-                    exhaustion: 0.0,
-                    message_id: "onFire",
-                    scaling: "when_caused_by_living_non_player"
-                }
-            )),
-        )
+    .map(|entry_id| RegistryEntry {
+        entry_id,
+        entry_data: Some(nbt!(
+            {
+                exhaustion: 0.0,
+                message_id: "onFire",
+                scaling: "when_caused_by_living_non_player"
+            }
+        )),
     })
     .collect::<Vec<_>>();
 
@@ -266,9 +272,9 @@ async fn send_registry_data(connection: &mut Connection) -> Result<(), Error> {
         },
         configuration::clientbound::Packet::RegistryData {
             registry_id: "dimension_type",
-            entries: &[(
-                "minecraft:overworld",
-                Some(nbt!(
+            entries: &[RegistryEntry {
+                entry_id: "minecraft:overworld",
+                entry_data: Some(nbt!(
                     {
                         ambient_light: 0.0,
                         bed_works: 1,
@@ -293,26 +299,26 @@ async fn send_registry_data(connection: &mut Connection) -> Result<(), Error> {
                         ultrawarm: 0,
                     }
                 )),
-            )],
+            }],
         },
         configuration::clientbound::Packet::RegistryData {
             registry_id: "painting_variant",
-            entries: &[(
-                "placeholder",
-                Some(nbt!(
+            entries: &[RegistryEntry {
+                entry_id: "placeholder",
+                entry_data: Some(nbt!(
                     {
                         asset_id: "minecraft:alban",
                         width: 1,
                         height: 1,
                     }
                 )),
-            )],
+            }],
         },
         configuration::clientbound::Packet::RegistryData {
             registry_id: "wolf_variant",
-            entries: &[(
-                "placeholder",
-                Some(nbt!(
+            entries: &[RegistryEntry {
+                entry_id: "placeholder",
+                entry_data: Some(nbt!(
                     {
                         angry_texture: "minecraft:entity/wolf/wolf_ashen_angry",
                         biomes: "minecraft:snowy_taiga",
@@ -320,14 +326,14 @@ async fn send_registry_data(connection: &mut Connection) -> Result<(), Error> {
                         wild_texture: "minecraft:entity/wolf/wolf_ashen",
                     }
                 )),
-            )],
+            }],
         },
         configuration::clientbound::Packet::RegistryData {
             registry_id: "worldgen/biome",
             entries: &[
-                (
-                    "minecraft:snowy_taiga",
-                    Some(nbt!(
+                RegistryEntry {
+                    entry_id: "minecraft:snowy_taiga",
+                    entry_data: Some(nbt!(
                         {
                             downfall: 0.4000000059604645,
                             effects: {
@@ -346,10 +352,10 @@ async fn send_registry_data(connection: &mut Connection) -> Result<(), Error> {
                             temperature: (-0.5),
                         }
                     )),
-                ),
-                (
-                    "minecraft:plains",
-                    Some(nbt!(
+                },
+                RegistryEntry {
+                    entry_id: "minecraft:plains",
+                    entry_data: Some(nbt!(
                         {
                             downfall: 0.4000000059604645,
                             effects: {
@@ -368,7 +374,7 @@ async fn send_registry_data(connection: &mut Connection) -> Result<(), Error> {
                             temperature: 0.8,
                         }
                     )),
-                ),
+                },
             ],
         },
     ];

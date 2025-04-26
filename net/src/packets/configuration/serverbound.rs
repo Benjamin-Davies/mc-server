@@ -1,26 +1,23 @@
-use crate::packets::deserialize::{
-    Deserialize,
-    types::{boolean, byte, prefixed_array, string, ubyte, varint},
-};
+use crate::packets::deserialize::{Deserialize, types};
 
 #[derive(Debug, Deserialize)]
 #[packet(state = Configuration)]
 pub enum Packet {
     #[packet(id = 0x00)]
     ClientInformation {
-        locale: string,
-        view_distance: byte,
-        chat_mode: varint,
-        chat_colors: boolean,
-        displayed_skin_parts: ubyte,
-        main_hand: varint,
-        enable_text_filtering: boolean,
-        allow_server_listings: boolean,
-        particle_status: varint,
+        locale: types::string,
+        view_distance: types::byte,
+        chat_mode: types::varint,
+        chat_colors: types::boolean,
+        displayed_skin_parts: types::ubyte,
+        main_hand: types::varint,
+        enable_text_filtering: types::boolean,
+        allow_server_listings: types::boolean,
+        particle_status: types::varint,
     },
     #[packet(id = 0x02)]
     CustomPayload {
-        channel: string,
+        channel: types::string,
         #[packet(deserialize_with = d.take_remaining().to_owned())]
         data: Vec<u8>,
     },
@@ -28,13 +25,13 @@ pub enum Packet {
     FinishConfiguration,
     #[packet(id = 0x07)]
     SelectKnownPacks {
-        known_packs: prefixed_array<KnownPack>,
+        known_packs: types::prefixed_array<KnownPack>,
     },
 }
 
 #[derive(Debug, Deserialize)]
 pub struct KnownPack {
-    pub x: string,
-    pub y: string,
-    pub z: string,
+    pub namespace: types::string,
+    pub id: types::string,
+    pub version: types::string,
 }

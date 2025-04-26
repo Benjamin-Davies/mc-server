@@ -1,5 +1,6 @@
 use std::{mem, str};
 
+use paste::paste;
 use snafu::prelude::*;
 use uuid::Uuid;
 
@@ -63,13 +64,21 @@ pub enum Error {
 }
 
 macro_rules! deserialize_primitive {
-    ($name:ident($ty:ty)) => {
-        pub fn $name(&mut self) -> Result<$ty, Error> {
-            ensure!(self.bytes.len() >= mem::size_of::<$ty>(), EndOfPacketSnafu);
-            let value =
-                <$ty>::from_be_bytes(self.bytes[..mem::size_of::<$ty>()].try_into().unwrap());
-            self.bytes = &self.bytes[mem::size_of::<$ty>()..];
-            Ok(value)
+    ($ty:ident) => {
+        paste! {
+            pub fn [<deserialize_ $ty>](&mut self) -> Result<types::$ty, Error> {
+                ensure!(
+                    self.bytes.len() >= mem::size_of::<types::$ty>(),
+                    EndOfPacketSnafu
+                );
+                let value = <types::$ty>::from_be_bytes(
+                    self.bytes[..mem::size_of::<types::$ty>()]
+                        .try_into()
+                        .unwrap(),
+                );
+                self.bytes = &self.bytes[mem::size_of::<types::$ty>()..];
+                Ok(value)
+            }
         }
     };
 }
@@ -106,14 +115,14 @@ impl<'de> Deserializer<'de> {
         Ok(byte)
     }
 
-    deserialize_primitive!(deserialize_short(types::short));
-    deserialize_primitive!(deserialize_ushort(types::ushort));
-    deserialize_primitive!(deserialize_int(types::int));
-    deserialize_primitive!(deserialize_uint(types::uint));
-    deserialize_primitive!(deserialize_long(types::long));
-    deserialize_primitive!(deserialize_ulong(types::ulong));
-    deserialize_primitive!(deserialize_float(types::float));
-    deserialize_primitive!(deserialize_double(types::double));
+    deserialize_primitive!(short);
+    deserialize_primitive!(ushort);
+    deserialize_primitive!(int);
+    deserialize_primitive!(uint);
+    deserialize_primitive!(long);
+    deserialize_primitive!(ulong);
+    deserialize_primitive!(float);
+    deserialize_primitive!(double);
 
     pub fn deserialize_string(&mut self) -> Result<types::string, Error> {
         self.deserialize_prefixed_byte_array()

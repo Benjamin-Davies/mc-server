@@ -1,4 +1,7 @@
-use crate::{packets::serialize::Serializer, registries};
+use crate::{
+    packets::serialize::{Serialize, Serializer},
+    registries::{self, BlockState},
+};
 
 #[derive(Debug)]
 pub struct Subchunk {
@@ -58,59 +61,50 @@ impl Subchunk {
         // Block states
         // https://minecraft.wiki/w/Minecraft_Wiki:Projects/wiki.vg_merge/Chunk_Format?oldid=2845070#Paletted_Container_structure
         s.serialize_ubyte(4); // Bits per entry
-        s.serialize_prefixed_array(
-            &[
-                0,
-                registries::block_state("minecraft:gray_concrete", &[])
-                    .unwrap()
-                    .id,
-                registries::block_state(
-                    "minecraft:deepslate_tile_stairs",
-                    &[
-                        ("facing", "west"),
-                        ("half", "top"),
-                        ("shape", "straight"),
-                        ("waterlogged", "false"),
-                    ],
-                )
-                .unwrap()
-                .id,
-                registries::block_state(
-                    "minecraft:deepslate_tile_stairs",
-                    &[
-                        ("facing", "west"),
-                        ("half", "bottom"),
-                        ("shape", "straight"),
-                        ("waterlogged", "false"),
-                    ],
-                )
-                .unwrap()
-                .id,
-                registries::block_state(
-                    "minecraft:deepslate_tile_stairs",
-                    &[
-                        ("facing", "east"),
-                        ("half", "top"),
-                        ("shape", "straight"),
-                        ("waterlogged", "false"),
-                    ],
-                )
-                .unwrap()
-                .id,
-                registries::block_state(
-                    "minecraft:deepslate_tile_stairs",
-                    &[
-                        ("facing", "east"),
-                        ("half", "bottom"),
-                        ("shape", "straight"),
-                        ("waterlogged", "false"),
-                    ],
-                )
-                .unwrap()
-                .id,
-            ],
-            |s, b| s.serialize_varint(*b),
-        ); // Pallete
+        s.serialize_prefixed_array(&[
+            registries::block_state("minecraft:air", &[]).unwrap(),
+            registries::block_state("minecraft:gray_concrete", &[]).unwrap(),
+            registries::block_state(
+                "minecraft:deepslate_tile_stairs",
+                &[
+                    ("facing", "west"),
+                    ("half", "top"),
+                    ("shape", "straight"),
+                    ("waterlogged", "false"),
+                ],
+            )
+            .unwrap(),
+            registries::block_state(
+                "minecraft:deepslate_tile_stairs",
+                &[
+                    ("facing", "west"),
+                    ("half", "bottom"),
+                    ("shape", "straight"),
+                    ("waterlogged", "false"),
+                ],
+            )
+            .unwrap(),
+            registries::block_state(
+                "minecraft:deepslate_tile_stairs",
+                &[
+                    ("facing", "east"),
+                    ("half", "top"),
+                    ("shape", "straight"),
+                    ("waterlogged", "false"),
+                ],
+            )
+            .unwrap(),
+            registries::block_state(
+                "minecraft:deepslate_tile_stairs",
+                &[
+                    ("facing", "east"),
+                    ("half", "bottom"),
+                    ("shape", "straight"),
+                    ("waterlogged", "false"),
+                ],
+            )
+            .unwrap(),
+        ]); // Pallete
         s.serialize_varint(16 * 16 * 16 / 2 / 8); // Length in i64s
         for chunk in self.blocks.chunks(2) {
             let x = chunk[0] as u8 & 0x0F;
@@ -123,5 +117,11 @@ impl Subchunk {
         s.serialize_byte_array(&[0x00, 0x00, 0x00]);
 
         s.finish()
+    }
+}
+
+impl Serialize for &BlockState {
+    fn serialize(&self, s: &mut Serializer) {
+        s.serialize_varint(self.id);
     }
 }
