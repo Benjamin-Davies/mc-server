@@ -9,7 +9,7 @@ use net::{
     packets::{
         play::{
             self,
-            clientbound::{ChunkData, GameEvent, LightData},
+            clientbound::{ChunkData, GameEvent, LightData, LoginData},
         },
         status::clientbound::{Players, TextComponent},
     },
@@ -46,9 +46,11 @@ impl server::Callbacks for Callbacks {
         // https://minecraft.wiki/w/Java_Edition_protocol/FAQ#%E2%80%A6my_player_isn't_spawning!
         conn.send(play::clientbound::Packet::Login {
             entity_id: 1,
-            game_mode: 3,
-            is_flat: true,
-            enforces_secure_chat: true,
+            data: LoginData {
+                game_mode: 3,
+                is_flat: true,
+                enforces_secure_chat: true,
+            },
         })
         .await?;
         conn.send(play::clientbound::Packet::GameEvent {
@@ -103,6 +105,7 @@ impl server::Callbacks for Callbacks {
             velocity_z: 0.0,
             yaw: 0.0,
             pitch: 0.0,
+            flags: 0,
         })
         .await?;
 

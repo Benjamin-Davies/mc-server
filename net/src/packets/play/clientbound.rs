@@ -1,79 +1,85 @@
-use uuid::Uuid;
-
 use crate::{
     nbt,
-    packets::serialize::{Serialize, Serializer},
+    packets::serialize::{Serialize, Serializer, types},
 };
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub enum Packet<'a> {
+    #[packet(id = 0x01)]
     AddEntity {
-        entity_id: i32,
-        entity_uuid: Uuid,
-        entity_type: i32,
-        x: f64,
-        y: f64,
-        z: f64,
-        pitch: u8,
-        yaw: u8,
-        head_yaw: u8,
-        data: i32,
-        velocity_x: i16,
-        velocity_y: i16,
-        velocity_z: i16,
+        entity_id: types::varint,
+        entity_uuid: types::uuid,
+        entity_type: types::varint,
+        x: types::double,
+        y: types::double,
+        z: types::double,
+        pitch: types::ubyte,
+        yaw: types::ubyte,
+        head_yaw: types::ubyte,
+        data: types::varint,
+        velocity_x: types::short,
+        velocity_y: types::short,
+        velocity_z: types::short,
     },
-    ChunkBatchFinished {
-        batch_size: i32,
-    },
+    #[packet(id = 0x0C)]
+    ChunkBatchFinished { batch_size: types::varint },
+    #[packet(id = 0x0D)]
     ChunkBatchStart,
+    #[packet(id = 0x1D)]
     Disconnect {
+        #[packet(serialize_with = nbt::Tag::from(*reason).serialize(s))]
         reason: &'a str,
     },
+    #[packet(id = 0x20)]
     EntityPositionSync {
-        entity_id: i32,
-        x: f64,
-        y: f64,
-        z: f64,
-        velocity_x: f64,
-        velocity_y: f64,
-        velocity_z: f64,
-        yaw: f32,
-        pitch: f32,
-        on_ground: bool,
+        entity_id: types::varint,
+        x: types::double,
+        y: types::double,
+        z: types::double,
+        velocity_x: types::double,
+        velocity_y: types::double,
+        velocity_z: types::double,
+        yaw: types::float,
+        pitch: types::float,
+        on_ground: types::boolean,
     },
+    #[packet(id = 0x23)]
     GameEvent {
+        #[packet(serialize_with = s.serialize_ubyte(*event as u8))]
         event: GameEvent,
-        value: f32,
+        value: types::float,
     },
-    KeepAlive {
-        keep_alive_id: i64,
-    },
+    #[packet(id = 0x27)]
+    KeepAlive { keep_alive_id: types::long },
+    #[packet(id = 0x28)]
     LevelChunkWithLight {
-        chunk_x: i32,
-        chunk_z: i32,
+        chunk_x: types::int,
+        chunk_z: types::int,
         data: ChunkData,
         light: LightData,
     },
+    #[packet(id = 0x2C)]
     Login {
-        entity_id: i32,
-        game_mode: u8,
-        enforces_secure_chat: bool,
-        is_flat: bool,
+        entity_id: types::int,
+        data: LoginData,
     },
+    #[packet(id = 0x42)]
     PlayerPosition {
-        teleport_id: i32,
-        x: f64,
-        y: f64,
-        z: f64,
-        velocity_x: f64,
-        velocity_y: f64,
-        velocity_z: f64,
-        yaw: f32,
-        pitch: f32,
+        teleport_id: types::varint,
+        x: types::double,
+        y: types::double,
+        z: types::double,
+        velocity_x: types::double,
+        velocity_y: types::double,
+        velocity_z: types::double,
+        yaw: types::float,
+        pitch: types::float,
+        flags: types::int,
     },
+    #[packet(id = 0x58)]
     SetChunkCacheCenter {
-        chunk_x: i32,
-        chunk_z: i32,
+        chunk_x: types::varint,
+        chunk_z: types::varint,
     },
 }
 
@@ -92,153 +98,11 @@ pub enum GameEvent {
     StartChunks = 13,
 }
 
-impl Serialize for Packet<'_> {
-    fn serialize(&self, s: &mut Serializer) {
-        match self {
-            Self::AddEntity {
-                entity_id,
-                entity_uuid,
-                entity_type,
-                x,
-                y,
-                z,
-                pitch,
-                yaw,
-                head_yaw,
-                data,
-                velocity_x,
-                velocity_y,
-                velocity_z,
-            } => {
-                s.serialize_varint(0x01);
-                s.serialize_varint(*entity_id);
-                s.serialize_uuid(*entity_uuid);
-                s.serialize_varint(*entity_type);
-                s.serialize_double(*x);
-                s.serialize_double(*y);
-                s.serialize_double(*z);
-                s.serialize_ubyte(*pitch);
-                s.serialize_ubyte(*yaw);
-                s.serialize_ubyte(*head_yaw);
-                s.serialize_varint(*data);
-                s.serialize_short(*velocity_x);
-                s.serialize_short(*velocity_y);
-                s.serialize_short(*velocity_z);
-            }
-            Self::ChunkBatchFinished { batch_size } => {
-                s.serialize_varint(0x0C);
-                s.serialize_varint(*batch_size);
-            }
-            Self::ChunkBatchStart => {
-                s.serialize_varint(0x0D);
-            }
-            Self::Disconnect { reason } => {
-                s.serialize_varint(0x1D);
-                nbt::Tag::from(*reason).serialize(s);
-            }
-            Self::EntityPositionSync {
-                entity_id,
-                x,
-                y,
-                z,
-                velocity_x,
-                velocity_y,
-                velocity_z,
-                yaw,
-                pitch,
-                on_ground,
-            } => {
-                s.serialize_varint(0x20);
-                s.serialize_varint(*entity_id);
-                s.serialize_double(*x);
-                s.serialize_double(*y);
-                s.serialize_double(*z);
-                s.serialize_double(*velocity_x);
-                s.serialize_double(*velocity_y);
-                s.serialize_double(*velocity_z);
-                s.serialize_float(*yaw);
-                s.serialize_float(*pitch);
-                s.serialize_boolean(*on_ground);
-            }
-            Self::GameEvent { event, value } => {
-                s.serialize_varint(0x23);
-                s.serialize_ubyte(*event as u8);
-                s.serialize_float(*value);
-            }
-            Self::KeepAlive { keep_alive_id } => {
-                s.serialize_varint(0x27);
-                s.serialize_long(*keep_alive_id);
-            }
-            Self::LevelChunkWithLight {
-                chunk_x,
-                chunk_z,
-                data,
-                light,
-            } => {
-                s.serialize_varint(0x28);
-                s.serialize_int(*chunk_x);
-                s.serialize_int(*chunk_z);
-                data.serialize(s);
-                light.serialize(s);
-            }
-            Self::Login {
-                entity_id,
-                game_mode,
-                is_flat,
-                enforces_secure_chat,
-            } => {
-                s.serialize_varint(0x2C);
-                s.serialize_int(*entity_id);
-                s.serialize_boolean(false);
-                s.serialize_prefixed_array_with(&["overworld"], |s, item| s.serialize_string(item));
-                s.serialize_varint(1);
-                s.serialize_varint(8);
-                s.serialize_varint(8);
-                s.serialize_boolean(false);
-                s.serialize_boolean(false);
-                s.serialize_boolean(false);
-                s.serialize_varint(0);
-                s.serialize_string("overworld");
-                s.serialize_long(0);
-                s.serialize_ubyte(*game_mode);
-                s.serialize_byte(-1);
-                s.serialize_boolean(false);
-                s.serialize_boolean(*is_flat);
-                s.serialize_boolean(false);
-                s.serialize_varint(0);
-                s.serialize_varint(0);
-                s.serialize_boolean(*enforces_secure_chat);
-            }
-            Self::PlayerPosition {
-                teleport_id,
-                x,
-                y,
-                z,
-                velocity_x,
-                velocity_y,
-                velocity_z,
-                yaw,
-                pitch,
-            } => {
-                s.serialize_varint(0x42);
-                s.serialize_varint(*teleport_id);
-                s.serialize_double(*x);
-                s.serialize_double(*y);
-                s.serialize_double(*z);
-                s.serialize_double(*velocity_x);
-                s.serialize_double(*velocity_y);
-                s.serialize_double(*velocity_z);
-                s.serialize_float(*yaw);
-                s.serialize_float(*pitch);
-                s.serialize_int(0);
-            }
-            Packet::SetChunkCacheCenter { chunk_x, chunk_z } => {
-                s.serialize_varint(0x58);
-                s.serialize_varint(*chunk_x);
-                s.serialize_varint(*chunk_z);
-            }
-        }
-    }
+#[derive(Debug)]
+pub struct LoginData {
+    pub game_mode: u8,
+    pub enforces_secure_chat: bool,
+    pub is_flat: bool,
 }
 
 impl Serialize for ChunkData {
@@ -257,5 +121,34 @@ impl Serialize for LightData {
         s.serialize_prefixed_array_with(&[0], |s, item| s.serialize_long(*item));
         s.serialize_varint(0);
         s.serialize_varint(0);
+    }
+}
+
+impl Serialize for LoginData {
+    fn serialize(&self, s: &mut Serializer) {
+        let LoginData {
+            game_mode,
+            enforces_secure_chat,
+            is_flat,
+        } = self;
+        s.serialize_boolean(false);
+        s.serialize_prefixed_array_with(&["overworld"], |s, item| s.serialize_string(item));
+        s.serialize_varint(1);
+        s.serialize_varint(8);
+        s.serialize_varint(8);
+        s.serialize_boolean(false);
+        s.serialize_boolean(false);
+        s.serialize_boolean(false);
+        s.serialize_varint(0);
+        s.serialize_string("overworld");
+        s.serialize_long(0);
+        s.serialize_ubyte(*game_mode);
+        s.serialize_byte(-1);
+        s.serialize_boolean(false);
+        s.serialize_boolean(*is_flat);
+        s.serialize_boolean(false);
+        s.serialize_varint(0);
+        s.serialize_varint(0);
+        s.serialize_boolean(*enforces_secure_chat);
     }
 }

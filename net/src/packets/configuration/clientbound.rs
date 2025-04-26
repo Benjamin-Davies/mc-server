@@ -1,73 +1,37 @@
 use crate::{
     nbt,
-    packets::serialize::{Serialize, Serializer},
+    packets::serialize::{Serialize, types},
 };
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub enum Packet<'a> {
+    #[packet(id = 0x02)]
     Disconnect {
+        #[packet(serialize_with = nbt::Tag::from(*reason).serialize(s))]
         reason: &'a str,
     },
+    #[packet(id = 0x03)]
     FinishConfiguration,
+    #[packet(id = 0x07)]
     RegistryData {
-        registry_id: &'a str,
-        entries: &'a [RegistryEntry<'a>],
+        registry_id: types::string<'a>,
+        entries: types::prefixed_array<'a, RegistryEntry<'a>>,
     },
+    #[packet(id = 0x0E)]
     SelectKnownPacks {
-        known_packs: &'a [KnownPack<'a>],
+        known_packs: types::prefixed_array<'a, KnownPack<'a>>,
     },
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub struct RegistryEntry<'a> {
-    pub entry_id: &'a str,
-    pub entry_data: Option<nbt::Tag>,
+    pub entry_id: types::string<'a>,
+    pub entry_data: types::prefixed_optional<nbt::Tag>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub struct KnownPack<'a> {
-    pub namespace: &'a str,
-    pub id: &'a str,
-    pub version: &'a str,
-}
-
-impl Serialize for Packet<'_> {
-    fn serialize(&self, s: &mut Serializer) {
-        match self {
-            &Packet::Disconnect { reason } => {
-                s.serialize_varint(0x02);
-                nbt::Tag::from(reason).serialize(s);
-            }
-            &Packet::FinishConfiguration => {
-                s.serialize_varint(0x03);
-            }
-            &Packet::RegistryData {
-                registry_id,
-                entries,
-            } => {
-                s.serialize_varint(0x07);
-                s.serialize_string(registry_id);
-                s.serialize_prefixed_array(entries);
-            }
-            Packet::SelectKnownPacks { known_packs } => {
-                s.serialize_varint(0x0E);
-                s.serialize_prefixed_array(known_packs);
-            }
-        }
-    }
-}
-
-impl Serialize for RegistryEntry<'_> {
-    fn serialize(&self, s: &mut Serializer) {
-        s.serialize_string(self.entry_id);
-        s.serialize_prefixed_optional(&self.entry_data);
-    }
-}
-
-impl Serialize for KnownPack<'_> {
-    fn serialize(&self, s: &mut Serializer) {
-        s.serialize_string(self.namespace);
-        s.serialize_string(self.id);
-        s.serialize_string(self.version);
-    }
+    pub namespace: types::string<'a>,
+    pub id: types::string<'a>,
+    pub version: types::string<'a>,
 }

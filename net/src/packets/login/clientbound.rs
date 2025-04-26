@@ -1,26 +1,13 @@
-use uuid::Uuid;
+use crate::packets::serialize::{Serialize, types};
 
-use crate::packets::serialize::{Serialize, Serializer};
-
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub enum Packet<'a> {
-    LoginDisconnect { reason: &'a str },
-    LoginFinished { uuid: Uuid, username: &'a str },
-}
-
-impl Serialize for Packet<'_> {
-    fn serialize(&self, s: &mut Serializer) {
-        match self {
-            Packet::LoginDisconnect { reason } => {
-                s.serialize_varint(0x00);
-                s.serialize_string(reason);
-            }
-            Packet::LoginFinished { uuid, username } => {
-                s.serialize_varint(0x02);
-                s.serialize_uuid(*uuid);
-                s.serialize_string(username);
-                s.serialize_prefixed_byte_array(&[]);
-            }
-        }
-    }
+    #[packet(id = 0x00)]
+    LoginDisconnect { reason: types::string<'a> },
+    #[packet(id = 0x02)]
+    LoginFinished {
+        uuid: types::uuid,
+        username: types::string<'a>,
+        properties: types::prefixed_byte_array<'a>,
+    },
 }

@@ -153,7 +153,11 @@ impl Client {
                     let username = &name;
 
                     self.connection
-                        .send(login::clientbound::Packet::LoginFinished { uuid, username })
+                        .send(login::clientbound::Packet::LoginFinished {
+                            uuid,
+                            username,
+                            properties: &[],
+                        })
                         .await?;
                 }
                 _ => {}

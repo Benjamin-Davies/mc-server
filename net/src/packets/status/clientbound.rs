@@ -1,9 +1,14 @@
-use crate::packets::serialize::{Serialize, Serializer};
+use crate::packets::serialize::{Serialize, types};
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub enum Packet<'a> {
-    StatusResponse { status: Status<'a> },
-    PongResponse { timestamp: i64 },
+    #[packet(id = 0x00)]
+    StatusResponse {
+        #[packet(serialize_with = s.serialize_string(&serde_json::to_string(status).unwrap().as_str()))]
+        status: Status<'a>,
+    },
+    #[packet(id = 0x01)]
+    PongResponse { timestamp: types::long },
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -28,19 +33,4 @@ pub struct Players {
 #[derive(Debug, serde::Serialize)]
 pub struct TextComponent {
     pub text: String,
-}
-
-impl Serialize for Packet<'_> {
-    fn serialize(&self, s: &mut Serializer) {
-        match self {
-            Packet::StatusResponse { status } => {
-                s.serialize_varint(0x00);
-                s.serialize_string(&serde_json::to_string(status).unwrap());
-            }
-            Packet::PongResponse { timestamp } => {
-                s.serialize_varint(0x01);
-                s.serialize_long(*timestamp);
-            }
-        }
-    }
 }

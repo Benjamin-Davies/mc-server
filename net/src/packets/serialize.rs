@@ -1,5 +1,7 @@
 use paste::paste;
 
+pub use net_derive::Serialize;
+
 #[allow(non_camel_case_types)]
 pub mod types {
     pub type boolean = bool;
