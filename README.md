@@ -6,7 +6,7 @@ Provides a demo that renders an analog clock using phantoms. Only supports vanil
 
 ## Usage
 
-Ensure that Java is installed and in path. Then run:
+Ensure that [Java](https://formulae.brew.sh/formula/openjdk) and [Rust](https://rustup.rs) are installed and in the path. Then run:
 
 ```sh
 ./generate_registries.sh # Required to extract block state and entity IDs from the official binaries
