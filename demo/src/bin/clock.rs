@@ -74,7 +74,7 @@ impl server::Callbacks for Callbacks {
                 }),
                 data: chunk.chunk_data(),
             },
-            light: LightData {},
+            light: LightData { subchunk_count: 2 },
         })
         .await?;
 
@@ -94,7 +94,7 @@ impl server::Callbacks for Callbacks {
                         }),
                         data: empty_chunk.chunk_data(),
                     },
-                    light: LightData {},
+                    light: LightData { subchunk_count: 2 },
                 })
                 .await?;
             }

@@ -116,6 +116,21 @@ impl Serializer {
         self.buf.extend_from_slice(value.as_bytes());
     }
 
+    pub fn serialize_prefixed_bitset(&mut self, value: &[bool]) {
+        let len = value.len().div_ceil(i64::BITS as usize);
+        self.serialize_varint(len as i32);
+        for i in 0..len {
+            let mut n = 0i64;
+            for j in 0..i64::BITS {
+                let index = i64::BITS as usize * i + j as usize;
+                if index < value.len() && value[index] {
+                    n |= 1 << j;
+                }
+            }
+            self.serialize_long(n);
+        }
+    }
+
     pub fn serialize_prefixed_optional<T: Serialize>(
         &mut self,
         value: &types::prefixed_optional<T>,

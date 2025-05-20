@@ -63,6 +63,12 @@ pub enum Packet<'a> {
         entity_id: types::int,
         data: LoginData,
     },
+    #[packet(id = 0x3A)]
+    PlayerAbilities {
+        flags: types::byte,
+        flying_speed: types::float,
+        fov_modifier: types::float,
+    },
     #[packet(id = 0x42)]
     PlayerPosition {
         teleport_id: types::varint,
@@ -90,7 +96,9 @@ pub struct ChunkData {
 }
 
 #[derive(Debug)]
-pub struct LightData {}
+pub struct LightData {
+    pub subchunk_count: u8,
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
@@ -115,14 +123,15 @@ impl Serialize for ChunkData {
 
 impl Serialize for LightData {
     fn serialize(&self, s: &mut Serializer) {
-        s.serialize_prefixed_array_with(&[0x7], |s, item| s.serialize_long(*item));
-        s.serialize_prefixed_array_with(&[0x7], |s, item| s.serialize_long(*item));
-        s.serialize_prefixed_array_with(&[0x0], |s, item| s.serialize_long(*item));
-        s.serialize_prefixed_array_with(&[0x0], |s, item| s.serialize_long(*item));
-        s.serialize_prefixed_array_with(&[(); 3], |s, ()| {
+        let count = self.subchunk_count as usize + 2;
+        s.serialize_prefixed_bitset(&vec![true; count]);
+        s.serialize_prefixed_bitset(&vec![true; count]);
+        s.serialize_prefixed_bitset(&vec![false; count]);
+        s.serialize_prefixed_bitset(&vec![false; count]);
+        s.serialize_prefixed_array_with(&vec![(); count], |s, ()| {
             s.serialize_prefixed_byte_array(&[0xFF; 2048]);
         });
-        s.serialize_prefixed_array_with(&[(); 3], |s, ()| {
+        s.serialize_prefixed_array_with(&vec![(); count], |s, ()| {
             s.serialize_prefixed_byte_array(&[0xFF; 2048]);
         });
     }

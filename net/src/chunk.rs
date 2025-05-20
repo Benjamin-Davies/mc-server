@@ -17,6 +17,7 @@ struct Subchunk {
 pub enum Block {
     Air,
     GrayConcrete,
+    GrayStainedGlass,
     StairsWestTop,
     StairsWestBottom,
     StairsEastTop,
@@ -27,6 +28,16 @@ impl Chunk {
     pub fn empty(subchunk_count: u8) -> Self {
         Self {
             subchunks: (0..subchunk_count).map(|_| Subchunk::empty()).collect(),
+        }
+    }
+
+    pub fn from_fn(subchunk_count: u8, mut f: impl FnMut(u8, u16, u8) -> Block) -> Self {
+        Self {
+            subchunks: (0..subchunk_count)
+                .map(|chunk_y| {
+                    Subchunk::from_fn(|x, y, z| f(x, y as u16 + 16 * (chunk_y as u16), z))
+                })
+                .collect(),
         }
     }
 
@@ -69,6 +80,18 @@ impl Subchunk {
         }
     }
 
+    fn from_fn(mut f: impl FnMut(u8, u8, u8) -> Block) -> Self {
+        let mut blocks = Vec::with_capacity(16 * 16 * 16);
+        for y in 0..16 {
+            for z in 0..16 {
+                for x in 0..16 {
+                    blocks.push(f(x, y, z));
+                }
+            }
+        }
+        Self { blocks }
+    }
+
     #[inline]
     fn block_index(&self, x: u8, y: u8, z: u8) -> usize {
         (y as usize * 16 + z as usize) * 16 + x as usize
@@ -97,6 +120,7 @@ impl Subchunk {
         s.serialize_prefixed_array(&[
             registries::block_state("minecraft:air", &[]).unwrap(),
             registries::block_state("minecraft:gray_concrete", &[]).unwrap(),
+            registries::block_state("minecraft:gray_stained_glass", &[]).unwrap(),
             registries::block_state(
                 "minecraft:deepslate_tile_stairs",
                 &[

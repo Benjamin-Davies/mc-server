@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 async-trait = "0.1.88"
+bytemuck = "1.23.0"
 chrono = "0.4.40"
 tokio = { version = "1.44.2", features = ["macros", "rt-multi-thread"] }
 uuid = { version = "1.16.0", features = ["v4"] }
