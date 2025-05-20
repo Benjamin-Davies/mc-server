@@ -10,7 +10,7 @@ Ensure that [Java](https://formulae.brew.sh/formula/openjdk) and [Rust](https://
 
 ```sh
 ./generate_registries.sh # Required to extract block state and entity IDs from the official binaries
-cargo run
+cargo run --bin clock
 ```
 
 Then launch Minecraft 1.21.4 (vanilla) and add `localhost` as a server.

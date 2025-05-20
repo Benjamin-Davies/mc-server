@@ -74,6 +74,28 @@ impl server::Callbacks for Callbacks {
         })
         .await?;
 
+        let empty_chunk = Subchunk::empty();
+        for chunk_x in -1..=1 {
+            for chunk_z in -1..=1 {
+                if (chunk_x, chunk_z) == (0, 0) {
+                    continue;
+                }
+                conn.send(play::clientbound::Packet::LevelChunkWithLight {
+                    chunk_x,
+                    chunk_z,
+                    data: ChunkData {
+                        heightmaps: nbt!({
+                            WORLD_SURFACE: [-1i64; 22],
+                            MOTION_BLOCKING: [-1i64; 22],
+                        }),
+                        data: empty_chunk.chunk_data(),
+                    },
+                    light: LightData {},
+                })
+                .await?;
+            }
+        }
+
         for (i, (x, y, _pitch, _yaw)) in phantom_positions().enumerate() {
             conn.send(play::clientbound::Packet::AddEntity {
                 entity_id: i as i32 + 10,

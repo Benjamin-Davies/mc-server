@@ -115,12 +115,16 @@ impl Serialize for ChunkData {
 
 impl Serialize for LightData {
     fn serialize(&self, s: &mut Serializer) {
-        s.serialize_prefixed_array_with(&[0], |s, item| s.serialize_long(*item));
-        s.serialize_prefixed_array_with(&[0], |s, item| s.serialize_long(*item));
-        s.serialize_prefixed_array_with(&[0], |s, item| s.serialize_long(*item));
-        s.serialize_prefixed_array_with(&[0], |s, item| s.serialize_long(*item));
-        s.serialize_varint(0);
-        s.serialize_varint(0);
+        s.serialize_prefixed_array_with(&[0x7], |s, item| s.serialize_long(*item));
+        s.serialize_prefixed_array_with(&[0x7], |s, item| s.serialize_long(*item));
+        s.serialize_prefixed_array_with(&[0x0], |s, item| s.serialize_long(*item));
+        s.serialize_prefixed_array_with(&[0x0], |s, item| s.serialize_long(*item));
+        s.serialize_prefixed_array_with(&[(); 3], |s, ()| {
+            s.serialize_prefixed_byte_array(&[0xFF; 2048]);
+        });
+        s.serialize_prefixed_array_with(&[(); 3], |s, ()| {
+            s.serialize_prefixed_byte_array(&[0xFF; 2048]);
+        });
     }
 }
 
