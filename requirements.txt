@@ -1,0 +1,2 @@
+numpy==2.2.6
+scikit-image==0.25.2
