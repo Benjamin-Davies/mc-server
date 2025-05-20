@@ -62,12 +62,15 @@ struct Callbacks {
 impl server::Callbacks for Callbacks {
     fn description(&self) -> TextComponent {
         TextComponent {
-            text: "jaw".to_owned(),
+            text: "I'm a teapot".to_owned(),
         }
     }
 
     fn players(&self) -> Players {
-        Players { max: 16, online: 0 }
+        Players {
+            max: 418,
+            online: 0,
+        }
     }
 
     fn dimension_data(&self) -> DimensionData {
