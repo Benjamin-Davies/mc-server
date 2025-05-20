@@ -4,7 +4,12 @@ use crate::{
 };
 
 #[derive(Debug)]
-pub struct Subchunk {
+pub struct Chunk {
+    subchunks: Vec<Subchunk>,
+}
+
+#[derive(Debug)]
+struct Subchunk {
     blocks: Vec<Block>,
 }
 
@@ -18,20 +23,50 @@ pub enum Block {
     StairsEastBottom,
 }
 
-impl Subchunk {
-    pub fn empty() -> Self {
+impl Chunk {
+    pub fn empty(subchunk_count: u8) -> Self {
         Self {
-            blocks: vec![Block::Air; 16 * 16 * 16],
+            subchunks: (0..subchunk_count).map(|_| Subchunk::empty()).collect(),
         }
     }
 
-    pub fn demo() -> Self {
-        let mut subchunk = Self::empty();
-        subchunk.set_block(7, 7, 15, Block::StairsWestTop);
-        subchunk.set_block(7, 8, 15, Block::StairsWestBottom);
-        subchunk.set_block(8, 7, 15, Block::StairsEastTop);
-        subchunk.set_block(8, 8, 15, Block::StairsEastBottom);
-        subchunk
+    pub fn demo(subchunk_count: u8) -> Self {
+        let mut chunk = Self::empty(subchunk_count);
+        chunk.set_block(7, 7, 15, Block::StairsWestTop);
+        chunk.set_block(7, 8, 15, Block::StairsWestBottom);
+        chunk.set_block(8, 7, 15, Block::StairsEastTop);
+        chunk.set_block(8, 8, 15, Block::StairsEastBottom);
+        chunk
+    }
+
+    #[inline]
+    pub fn set_block(&mut self, x: u8, y: u16, z: u8, block: Block) {
+        let subchunk = &mut self.subchunks[(y / 16) as usize];
+        subchunk.set_block(x, (y % 16) as u8, z, block);
+    }
+
+    #[inline]
+    pub fn block(&self, x: u8, y: u16, z: u8) -> Block {
+        let subchunk = &self.subchunks[(y / 16) as usize];
+        subchunk.block(x, (y % 16) as u8, z)
+    }
+
+    pub fn chunk_data(&self) -> Vec<u8> {
+        let mut s = Serializer::new();
+
+        for subchunk in &self.subchunks {
+            subchunk.chunk_data(&mut s);
+        }
+
+        s.finish()
+    }
+}
+
+impl Subchunk {
+    fn empty() -> Self {
+        Self {
+            blocks: vec![Block::Air; 16 * 16 * 16],
+        }
     }
 
     #[inline]
@@ -40,20 +75,18 @@ impl Subchunk {
     }
 
     #[inline]
-    pub fn set_block(&mut self, x: u8, y: u8, z: u8, block: Block) {
+    fn set_block(&mut self, x: u8, y: u8, z: u8, block: Block) {
         let index = self.block_index(x, y, z);
         self.blocks[index] = block;
     }
 
     #[inline]
-    pub fn block(&self, x: u8, y: u8, z: u8) -> Block {
+    fn block(&self, x: u8, y: u8, z: u8) -> Block {
         let index = self.block_index(x, y, z);
         self.blocks[index]
     }
 
-    pub fn chunk_data(&self) -> Vec<u8> {
-        let mut s = Serializer::new();
-
+    fn chunk_data(&self, s: &mut Serializer) {
         // Block count
         let block_count = self.blocks.iter().filter(|&&b| b != Block::Air).count() as i16;
         s.serialize_short(block_count);
@@ -115,8 +148,6 @@ impl Subchunk {
 
         // Biomes
         s.serialize_byte_array(&[0x00, 0x00, 0x00]);
-
-        s.finish()
     }
 }
 

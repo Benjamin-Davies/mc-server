@@ -37,6 +37,8 @@ pub trait Callbacks: Send + Sync {
         Players { max: 20, online: 0 }
     }
 
+    fn dimension_data(&self) -> DimensionData;
+
     async fn on_login(&self, conn: &mut Connection) -> Result<(), Error>;
     async fn on_tick(&self, conn: &mut Connection) -> Result<(), Error>;
 }
@@ -49,6 +51,10 @@ struct Client {
     connection: Connection,
     last_keepalive: Instant,
     server: Arc<Server>,
+}
+
+pub struct DimensionData {
+    pub height: i32,
 }
 
 #[derive(Debug, Snafu)]
@@ -176,7 +182,11 @@ impl Client {
                     self.server.callbacks.on_login(&mut self.connection).await?;
                 }
                 configuration::serverbound::Packet::SelectKnownPacks { .. } => {
-                    send_registry_data(&mut self.connection).await?;
+                    send_registry_data(
+                        &mut self.connection,
+                        self.server.callbacks.dimension_data(),
+                    )
+                    .await?;
 
                     self.connection
                         .send(configuration::clientbound::Packet::FinishConfiguration)
@@ -203,7 +213,10 @@ impl Client {
     }
 }
 
-async fn send_registry_data(connection: &mut Connection) -> Result<(), Error> {
+async fn send_registry_data(
+    connection: &mut Connection,
+    dimension_data: DimensionData,
+) -> Result<(), Error> {
     let damage_types = [
         "minecraft:arrow",
         "minecraft:bad_respawn_point",
@@ -285,9 +298,9 @@ async fn send_registry_data(connection: &mut Connection) -> Result<(), Error> {
                         has_ceiling: 0,
                         has_raids: 1,
                         has_skylight: 1,
-                        height: 16,
+                        height: (dimension_data.height),
                         infiniburn: "#minecraft:infiniburn_overworld",
-                        logical_height: 16,
+                        logical_height: (dimension_data.height),
                         min_y: 0,
                         monster_spawn_block_light_limit: 0,
                         monster_spawn_light_level: {

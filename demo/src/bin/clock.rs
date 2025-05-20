@@ -3,7 +3,7 @@ use std::f64;
 use async_trait::async_trait;
 use chrono::{Datelike, Timelike};
 use net::{
-    chunk::Subchunk,
+    chunk::Chunk,
     connection::Connection,
     nbt,
     packets::{
@@ -14,7 +14,7 @@ use net::{
         status::clientbound::{Players, TextComponent},
     },
     registries,
-    server::{self, Error, Server},
+    server::{self, DimensionData, Error, Server},
 };
 use uuid::Uuid;
 
@@ -42,6 +42,10 @@ impl server::Callbacks for Callbacks {
         }
     }
 
+    fn dimension_data(&self) -> DimensionData {
+        DimensionData { height: 32 }
+    }
+
     async fn on_login(&self, conn: &mut Connection) -> Result<(), Error> {
         // https://minecraft.wiki/w/Java_Edition_protocol/FAQ#%E2%80%A6my_player_isn't_spawning!
         conn.send(play::clientbound::Packet::Login {
@@ -59,7 +63,7 @@ impl server::Callbacks for Callbacks {
         })
         .await?;
 
-        let chunk = Subchunk::demo();
+        let chunk = Chunk::demo(2);
         conn.send(play::clientbound::Packet::LevelChunkWithLight {
             chunk_x: 0,
             chunk_z: 0,
@@ -74,7 +78,7 @@ impl server::Callbacks for Callbacks {
         })
         .await?;
 
-        let empty_chunk = Subchunk::empty();
+        let empty_chunk = Chunk::empty(2);
         for chunk_x in -1..=1 {
             for chunk_z in -1..=1 {
                 if (chunk_x, chunk_z) == (0, 0) {

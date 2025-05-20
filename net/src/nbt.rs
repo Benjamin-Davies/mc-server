@@ -114,8 +114,8 @@ macro_rules! nbt {
     ( $value:literal ) => {
         $crate::nbt::Tag::from($value)
     };
-    ( ( - $value:literal ) ) => {
-        $crate::nbt::Tag::from(-$value)
+    ( ( $value:expr ) ) => {
+        $crate::nbt::Tag::from($value)
     };
     ([ $n:literal; $size:expr ]) => {
         $crate::nbt::Tag::LongArray(vec![$n; $size])
